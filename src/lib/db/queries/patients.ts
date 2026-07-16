@@ -1,0 +1,167 @@
+import { and, desc, eq, ilike, or, sql } from "drizzle-orm";
+import { getDb } from "@/lib/db";
+import {
+  appointments,
+  invoices,
+  patientConsents,
+  patients,
+} from "@/lib/db/schema";
+import type { DuplicateCandidate } from "@/lib/domain/patient";
+
+export interface ListPatientsParams {
+  organizationId: string;
+  search?: string;
+  /** Restrict to a practitioner's assigned patients (practitioner scope). */
+  assignedEmployeeId?: string;
+  /** Marketing scope: only opted-in patients. */
+  marketingOnly?: boolean;
+  limit?: number;
+}
+
+export async function listPatients(params: ListPatientsParams) {
+  const db = getDb();
+  const conditions = [eq(patients.organizationId, params.organizationId)];
+
+  if (params.search && params.search.trim().length > 0) {
+    const q = `%${params.search.trim()}%`;
+    conditions.push(
+      or(
+        ilike(patients.legalFirstName, q),
+        ilike(patients.legalLastName, q),
+        ilike(patients.email, q),
+        ilike(patients.phoneE164, q),
+        ilike(patients.patientNumber, q),
+      )!,
+    );
+  }
+  if (params.assignedEmployeeId) {
+    conditions.push(eq(patients.primaryPractitionerId, params.assignedEmployeeId));
+  }
+  if (params.marketingOnly) {
+    conditions.push(eq(patients.marketingOptIn, true));
+  }
+
+  return db
+    .select({
+      id: patients.id,
+      patientNumber: patients.patientNumber,
+      legalFirstName: patients.legalFirstName,
+      legalLastName: patients.legalLastName,
+      preferredName: patients.preferredName,
+      email: patients.email,
+      phoneE164: patients.phoneE164,
+      status: patients.status,
+      preferredLanguage: patients.preferredLanguage,
+    })
+    .from(patients)
+    .where(and(...conditions))
+    .orderBy(desc(patients.createdAt))
+    .limit(params.limit ?? 50);
+}
+
+export async function getPatientById(organizationId: string, id: string) {
+  const db = getDb();
+  const [row] = await db
+    .select()
+    .from(patients)
+    .where(and(eq(patients.organizationId, organizationId), eq(patients.id, id)))
+    .limit(1);
+  return row ?? null;
+}
+
+/** Candidate set for duplicate detection (FR-PAT-002). */
+export async function findDuplicateCandidates(
+  organizationId: string,
+  query: {
+    email?: string | null;
+    phoneE164?: string | null;
+    legalLastName?: string | null;
+  },
+): Promise<DuplicateCandidate[]> {
+  const db = getDb();
+  const ors = [];
+  if (query.email) ors.push(eq(patients.email, query.email));
+  if (query.phoneE164) ors.push(eq(patients.phoneE164, query.phoneE164));
+  if (query.legalLastName)
+    ors.push(ilike(patients.legalLastName, query.legalLastName));
+  if (ors.length === 0) return [];
+
+  return db
+    .select({
+      id: patients.id,
+      email: patients.email,
+      phoneE164: patients.phoneE164,
+      legalFirstName: patients.legalFirstName,
+      legalLastName: patients.legalLastName,
+      dateOfBirth: patients.dateOfBirth,
+    })
+    .from(patients)
+    .where(and(eq(patients.organizationId, organizationId), or(...ors)))
+    .limit(25);
+}
+
+export async function nextPatientSequence(
+  organizationId: string,
+): Promise<number> {
+  const db = getDb();
+  const [{ count }] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(patients)
+    .where(eq(patients.organizationId, organizationId));
+  return (count ?? 0) + 1;
+}
+
+/** Patient 360 aggregate (FR-PAT-003): profile + recent related records. */
+export async function getPatient360(organizationId: string, id: string) {
+  const db = getDb();
+  const patient = await getPatientById(organizationId, id);
+  if (!patient) return null;
+
+  const [upcoming, recentInvoices, consents] = await Promise.all([
+    db
+      .select({
+        id: appointments.id,
+        startAt: appointments.startAt,
+        endAt: appointments.endAt,
+        status: appointments.status,
+        modality: appointments.modality,
+      })
+      .from(appointments)
+      .where(
+        and(
+          eq(appointments.organizationId, organizationId),
+          eq(appointments.patientId, id),
+        ),
+      )
+      .orderBy(desc(appointments.startAt))
+      .limit(10),
+    db
+      .select({
+        id: invoices.id,
+        invoiceNumber: invoices.invoiceNumber,
+        status: invoices.status,
+        totalCents: invoices.totalCents,
+        balanceCents: invoices.balanceCents,
+      })
+      .from(invoices)
+      .where(
+        and(
+          eq(invoices.organizationId, organizationId),
+          eq(invoices.patientId, id),
+        ),
+      )
+      .orderBy(desc(invoices.createdAt))
+      .limit(10),
+    db
+      .select()
+      .from(patientConsents)
+      .where(
+        and(
+          eq(patientConsents.organizationId, organizationId),
+          eq(patientConsents.patientId, id),
+        ),
+      ),
+  ]);
+
+  return { patient, appointments: upcoming, invoices: recentInvoices, consents };
+}
