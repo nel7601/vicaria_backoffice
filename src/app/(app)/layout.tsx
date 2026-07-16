@@ -12,6 +12,10 @@ export default async function AppLayout({
   const user = await getSessionUser();
   if (!user) redirect("/login");
 
+  // FR-AUTH-002: privileged roles cannot hold a session without a valid second
+  // factor. Send them to enroll/verify before any app route renders.
+  if (user.mfaRequired && !user.mfaSatisfied) redirect("/mfa");
+
   // Compute which nav items this user's roles may read. Dashboard is always on.
   const visibleHrefs = NAV_ITEMS.filter(
     (item) => !item.resource || can(user.roles, item.resource, "read"),
