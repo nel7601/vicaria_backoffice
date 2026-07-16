@@ -197,9 +197,9 @@ export const receipts = pgTable("receipts", {
   organizationId: uuid("organization_id")
     .notNull()
     .references(() => organizations.id),
-  paymentId: uuid("payment_id")
-    .notNull()
-    .references(() => payments.id),
+  // Nullable: an invoice-level receipt aggregates its confirmed payments; a
+  // per-payment receipt sets this. (§FR-REC-001)
+  paymentId: uuid("payment_id").references(() => payments.id),
   invoiceId: uuid("invoice_id").references(() => invoices.id),
   receiptNumber: varchar("receipt_number", { length: 40 }),
   amountCents: integer("amount_cents").notNull(),

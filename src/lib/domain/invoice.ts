@@ -117,6 +117,41 @@ export function receiptableCents(confirmedAllocations: number[]): number {
   return sumCents(confirmedAllocations);
 }
 
+/** Format an immutable sequential invoice number (§FR-INV-002). */
+export function formatInvoiceNumber(prefix: string, sequence: number): string {
+  return `${prefix}${String(sequence).padStart(5, "0")}`;
+}
+
+/**
+ * Validate a proposed refund against the original payment (§FR-REF-001):
+ * never more than the confirmed payment amount minus what was already refunded.
+ */
+export function canRefund(params: {
+  proposedCents: number;
+  paymentAmountCents: number;
+  alreadyRefundedCents: number;
+}): { ok: boolean; reason?: string } {
+  if (params.proposedCents <= 0) {
+    return { ok: false, reason: "Refund must be positive." };
+  }
+  const available = params.paymentAmountCents - params.alreadyRefundedCents;
+  if (params.proposedCents > available) {
+    return { ok: false, reason: "Exceeds refundable amount." };
+  }
+  return { ok: true };
+}
+
+/** Derive payment status from refunds against it (Appendix A). */
+export function derivePaymentStatus(
+  amountCents: number,
+  refundedCents: number,
+  base: "pending" | "confirmed" = "confirmed",
+): "pending" | "confirmed" | "partially_refunded" | "refunded" {
+  if (refundedCents <= 0) return base;
+  if (refundedCents >= amountCents) return "refunded";
+  return "partially_refunded";
+}
+
 // `new Date()` is unavailable inside workflow scripts; in app runtime it is fine.
 function nowGuard(): Date {
   return new Date();
