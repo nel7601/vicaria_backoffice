@@ -6,7 +6,9 @@ import { can } from "@/lib/auth/rbac";
 import { formatCents } from "@/lib/domain/money";
 import { getPatient360 } from "@/lib/db/queries/patients";
 import { getPrimaryOrganization } from "@/lib/db/queries/organization";
+import { listPlans, listTasks } from "@/lib/db/queries/clinical";
 import { recordAccess } from "@/lib/audit/record";
+import { PlansTasksPanel } from "./plans-tasks-panel";
 
 export default async function Patient360Page({
   params,
@@ -29,12 +31,18 @@ export default async function Patient360Page({
   const canClinical = can(user.roles, "clinical_notes", "read");
 
   let data: Awaited<ReturnType<typeof getPatient360>> = null;
+  let plans: Awaited<ReturnType<typeof listPlans>> = [];
+  let tasks: Awaited<ReturnType<typeof listTasks>> = [];
   let dbError: string | null = null;
   try {
     const org = await getPrimaryOrganization();
     if (org) {
       data = await getPatient360(org.id, id);
       if (data) {
+        [plans, tasks] = await Promise.all([
+          listPlans(org.id, id),
+          listTasks(org.id, id),
+        ]);
         // §12.2: log access to a patient record.
         await recordAccess({
           organizationId: org.id,
@@ -60,6 +68,8 @@ export default async function Patient360Page({
   if (!data) notFound();
 
   const { patient, appointments, invoices, consents } = data;
+  const canManagePlans = can(user.roles, "clinical_notes", "create");
+  const canManageTasks = can(user.roles, "patients_demographic", "update");
   const balance = invoices.reduce((s, i) => s + (i.balanceCents ?? 0), 0);
   const nextAppt = [...appointments]
     .filter((a) => new Date(a.startAt) >= new Date())
@@ -177,12 +187,33 @@ export default async function Patient360Page({
         </ul>
       </Card>
 
-      {/* Clinical — gated; full content ships in Phase 3 */}
+      {/* Plans & follow-up tasks */}
+      <Card>
+        <CardTitle>Plans &amp; follow-up</CardTitle>
+        <div className="mt-4">
+          <PlansTasksPanel
+            patientId={patient.id}
+            plans={plans.map((p) => ({ id: p.id, title: p.title, status: p.status }))}
+            tasks={tasks.map((t) => ({
+              id: t.id,
+              title: t.title,
+              status: t.status,
+              priority: t.priority,
+              dueDate: t.dueDate ? t.dueDate.toISOString() : null,
+            }))}
+            canManagePlans={canManagePlans}
+            canManageTasks={canManageTasks}
+          />
+        </div>
+      </Card>
+
+      {/* Clinical — gated; encounters live under /encounters */}
       {canClinical && (
         <Card>
           <CardTitle>Clinical</CardTitle>
           <p className="mt-2 text-sm text-muted">
-            Encounters, notes and measurements appear here (Phase 3).
+            Signed notes and measurements are managed in the Encounters
+            workspace.
           </p>
         </Card>
       )}

@@ -75,6 +75,27 @@ async function main() {
     validityDays: 365,
   });
 
+  console.log("Seeding encounter template…");
+  const [tpl] = await db
+    .insert(schema.encounterTemplates)
+    .values({ organizationId: org.id, name: "Coaching Session Note" })
+    .returning();
+  await db.insert(schema.encounterTemplateVersions).values({
+    organizationId: org.id,
+    templateId: tpl.id,
+    version: 1,
+    schema: {
+      fields: [
+        { key: "chief_complaint", label: "Chief complaint", type: "textarea", required: true },
+        { key: "weight", label: "Weight", type: "number", min: 0, max: 500 },
+        { key: "mood", label: "Mood", type: "select", options: ["good", "neutral", "low"] },
+        { key: "pain", label: "Pain (0-10)", type: "scale", min: 0, max: 10 },
+        { key: "plan_notes", label: "Plan notes", type: "textarea" },
+      ],
+    },
+    publishedAt: new Date(),
+  });
+
   console.log("Seeding demo patients…");
   await db.insert(schema.patients).values([
     {

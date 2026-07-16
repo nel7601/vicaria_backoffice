@@ -10,11 +10,12 @@ import { accessLogs, auditEvents } from "@/lib/db/schema";
  * sign, permission_change) require a `reason`.
  */
 
+// Actions that MUST carry a reason (§12.2). Signing is audited with
+// hash/signer/timestamp but does not require a free-text reason.
 const SENSITIVE_ACTIONS = new Set([
   "void",
   "refund",
   "export",
-  "sign",
   "delete",
   "permission_change",
 ]);
