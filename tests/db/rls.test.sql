@@ -1,0 +1,36 @@
+-- RLS / authorization database tests (spec §15 "Database", §15.1, AC-08).
+--
+-- Run against a disposable test database that has all migrations applied and a
+-- seeded org + per-role users. Intended for pgTAP or a psql harness in CI
+-- (a follow-up infra task once Supabase test projects exist, S0-02).
+--
+-- Each block sets the JWT claims that RLS reads (app.current_roles / _org via
+-- request.jwt.claims) and asserts the row visibility the §4.2 matrix requires.
+--
+-- Example harness pattern (pseudo-SQL):
+--
+--   -- Marketing cannot read clinical notes (§15.1)
+--   set local role authenticated;
+--   set local request.jwt.claims = '{"sub":"<uid>","app_metadata":{"roles":["marketing"],"organization_id":"<org>"}}';
+--   select is_empty($$ select 1 from encounters $$, 'marketing sees no encounters');
+--
+--   -- Practitioner sees only their own encounters
+--   set local request.jwt.claims = '{"sub":"<uid>","app_metadata":{"roles":["practitioner"],"organization_id":"<org>"}}';
+--   select results_eq(
+--     $$ select count(*)::int from encounters $$,
+--     $$ values (<own_count>) $$,
+--     'practitioner sees only own encounters');
+--
+--   -- Auditor is read-only
+--   set local request.jwt.claims = '{"sub":"<uid>","app_metadata":{"roles":["auditor"],"organization_id":"<org>"}}';
+--   select throws_ok($$ update invoices set status = 'void' $$);
+--
+-- Assertions to implement (mirror src/lib/auth/rbac.ts + tests/auth/rbac.test.ts):
+--   1. Marketing: no encounters, no clinical_reports; only aggregate/opted-in patients.
+--   2. Reception: CRUD patients; no clinical notes.
+--   3. Billing: CRUD invoices/payments; no clinical notes.
+--   4. Practitioner: only assigned patients; only own encounters.
+--   5. Auditor: read everywhere permitted; every write throws.
+--   6. Cross-organization rows are never visible for any role.
+--   7. Signed encounter UPDATE of content raises (immutability trigger).
+--   8. Issued invoice_number UPDATE raises (immutability trigger).

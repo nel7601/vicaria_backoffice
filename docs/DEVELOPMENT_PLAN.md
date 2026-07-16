@@ -34,15 +34,27 @@ control. Money is stored in integer cents; timestamps in UTC, presented in
 
 ## 3. Phase roadmap
 
-| Phase | Spec duration | Milestone | Exit condition |
-|-------|---------------|-----------|----------------|
-| **0. Discovery / Sprint 0** | 1–2 wk | — | Schema, ADRs, environments, auth skeleton, CI baseline |
-| **1. Platform & Admin** | 2 wk | M1 Foundation | Auth/MFA, org/locations/employees, roles/RLS, settings, audit base |
-| **2. Patients & Scheduling** | 2–3 wk | M2 (part) | Patients, consents, documents, Patient 360, calendar, appointments |
-| **3. Consultations & Treatments** | 3 wk | M2 Clinical Core | Templates, encounters, signing, amendments, plans, skin procedures, packages |
-| **4. Billing & Square** | 3 wk | M3 Revenue Cycle | Invoices, payments, receipts, cash/e-transfer, Square, reconciliation |
-| **5. Reporting & Marketing** | 2 wk | M4 Reporting | Dashboards + prioritized reports + audited exports |
-| **6. Hardening & Launch** | 2 wk | M5 Production Ready | Security, performance, migration, UAT, training, go-live |
+| Phase | Spec duration | Milestone | Exit condition | Status |
+|-------|---------------|-----------|----------------|--------|
+| **0. Discovery / Sprint 0** | 1–2 wk | — | Schema, ADRs, environments, auth skeleton, CI baseline | ✅ done |
+| **1. Platform & Admin** | 2 wk | M1 Foundation | Auth/MFA, org/locations/employees, roles/RLS, settings, audit base | ✅ done |
+| **2. Patients & Scheduling** | 2–3 wk | M2 (part) | Patients, consents, Patient 360, calendar, appointments | ✅ done |
+| **3. Consultations & Treatments** | 3 wk | M2 Clinical Core | Templates, encounters, signing, amendments, plans, skin pricing | ✅ done |
+| **4. Billing & Square** | 3 wk | M3 Revenue Cycle | Invoices, payments, receipts, e-transfer, Square, refunds | ✅ done |
+| **5. Reporting & Marketing** | 2 wk | M4 Reporting | Prioritized reports + audited CSV exports + privacy rules | ✅ done |
+| **6. Hardening & Launch** | 2 wk | M5 Production Ready | Security headers/rate-limit, PHI-safe logging, CI, E2E/RLS scaffolds, runbooks | 🟡 code done; infra/UAT pending |
+
+### Phase 6 — what is code-complete vs. pending infra
+
+Code-complete in this repo: security headers + rate limiting (SEC-03/07),
+PHI-safe structured logging (SEC-06), GitHub Actions CI (typecheck/lint/test/
+build), Playwright E2E scaffold for the §15.1 critical flows, an RLS/pgTAP test
+scaffold, and runbooks (deploy, incident & restore, go-live checklist).
+
+Pending (needs credentials / DevOps — S0-02/S0-03, §16, §20): provision Supabase
+(dev/staging/prod, Canada) and Vercel (yul1), configure backups + restore test,
+authenticate the email domain, run the migration/cutover, execute UAT, and
+resolve decisions D-01..D-10.
 
 Reference estimate (§17): ~10–14 weeks to MVP for two full-stack devs after
 discovery.

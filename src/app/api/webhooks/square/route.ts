@@ -5,6 +5,7 @@ import {
   squareEventId,
   verifySquareSignature,
 } from "@/lib/domain/square";
+import { webhookLimiter } from "@/lib/security/rate-limit";
 
 /**
  * Square webhook (spec §10.1).
@@ -18,6 +19,13 @@ export async function POST(request: Request) {
   if (!signatureKey) {
     // Misconfiguration — do not accept unverifiable events.
     return NextResponse.json({ error: "not_configured" }, { status: 503 });
+  }
+
+  // SEC-07: basic rate limiting per source IP.
+  const ip =
+    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
+  if (!webhookLimiter.check(`square:${ip}`).allowed) {
+    return NextResponse.json({ error: "rate_limited" }, { status: 429 });
   }
 
   const rawBody = await request.text();

@@ -1,9 +1,13 @@
 import { type NextRequest } from "next/server";
 import { updateSession } from "@/lib/supabase/middleware";
+import { applySecurityHeaders } from "@/lib/security/headers";
 
 // Next.js 16 renamed the "middleware" convention to "proxy".
 export async function proxy(request: NextRequest) {
-  return updateSession(request);
+  const response = await updateSession(request);
+  // SEC-03/NFR-04: attach security headers to every response.
+  applySecurityHeaders(response.headers);
+  return response;
 }
 
 export const config = {
