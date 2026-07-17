@@ -6,10 +6,12 @@ import {
   getPrimaryOrganization,
   listEmployees,
   listLocations,
+  listServicesWithPrice,
 } from "@/lib/db/queries/organization";
 import { CompanyForm } from "./company-form";
 import { LocationsSection, type LocationRow } from "./locations-section";
 import { EmployeesSection, type EmployeeRow } from "./employees-section";
+import { ServicesSection, type ServiceRow } from "./services-section";
 
 /**
  * Settings (spec §7, Phase 1). Company + locations + employees/roles.
@@ -39,6 +41,7 @@ export default async function SettingsPage() {
   let companyDefaults = {};
   let locations: LocationRow[] = [];
   let employees: EmployeeRow[] = [];
+  let services: ServiceRow[] = [];
 
   try {
     const org = await getPrimaryOrganization();
@@ -59,6 +62,7 @@ export default async function SettingsPage() {
       };
       locations = (await listLocations(org.id)) as LocationRow[];
       employees = (await listEmployees(org.id)) as EmployeeRow[];
+      services = (await listServicesWithPrice(org.id)) as ServiceRow[];
     }
   } catch (e) {
     dbError =
@@ -92,6 +96,13 @@ export default async function SettingsPage() {
         <CardTitle>Locations</CardTitle>
         <div className="mt-4">
           <LocationsSection locations={locations} canEdit={canEditCompany} />
+        </div>
+      </Card>
+
+      <Card>
+        <CardTitle>Services &amp; prices</CardTitle>
+        <div className="mt-4">
+          <ServicesSection services={services} canEdit={canEditCompany} />
         </div>
       </Card>
 

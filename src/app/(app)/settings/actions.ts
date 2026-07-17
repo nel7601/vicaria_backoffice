@@ -10,6 +10,8 @@ import {
   employees,
   locations,
   organizations,
+  servicePrices,
+  services,
   userRoles,
   users,
 } from "@/lib/db/schema";
@@ -18,6 +20,7 @@ import {
   companySettingsSchema,
   employeeSchema,
   locationSchema,
+  serviceSchema,
 } from "@/lib/schemas/settings";
 
 export interface ActionResult {
@@ -121,6 +124,58 @@ export async function createLocationAction(raw: unknown): Promise<ActionResult> 
   });
 
   revalidatePath("/settings");
+  return { ok: true };
+}
+
+/** FR-SVC-001: create a catalog service with its initial versioned price. */
+export async function createServiceAction(raw: unknown): Promise<ActionResult> {
+  const user = await authorize("configuration", "update");
+  const parsed = serviceSchema.safeParse(raw);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
+  }
+  const org = await getPrimaryOrganization();
+  if (!org) return { ok: false, error: "Organization not found." };
+
+  const data = parsed.data;
+  const db = getDb();
+
+  const created = await db.transaction(async (tx) => {
+    const [svc] = await tx
+      .insert(services)
+      .values({
+        organizationId: org.id,
+        nameEn: data.nameEn,
+        nameEs: data.nameEs,
+        category: blankToNull(data.category),
+        defaultDurationMinutes: data.defaultDurationMinutes,
+        isActive: true,
+      })
+      .returning();
+    await tx.insert(servicePrices).values({
+      organizationId: org.id,
+      serviceId: svc.id,
+      priceCents: data.priceCents,
+      taxRateBps: data.taxRateBps,
+    });
+    return svc;
+  });
+
+  await recordAudit({
+    organizationId: org.id,
+    actorUserId: user.authId,
+    action: "create",
+    entityType: "service",
+    entityId: created.id,
+    after: {
+      nameEn: data.nameEn,
+      priceCents: data.priceCents,
+      taxRateBps: data.taxRateBps,
+    },
+  });
+
+  revalidatePath("/settings");
+  revalidatePath("/calendar");
   return { ok: true };
 }
 

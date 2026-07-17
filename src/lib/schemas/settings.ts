@@ -33,6 +33,18 @@ export const locationSchema = z.object({
 
 export type LocationInput = z.infer<typeof locationSchema>;
 
+/** Service catalog entry (FR-SVC-001). Price in cents; tax in basis points. */
+export const serviceSchema = z.object({
+  nameEn: z.string().trim().min(1, "Required").max(160),
+  nameEs: z.string().trim().min(1, "Required").max(160),
+  category: z.string().trim().max(80).optional().or(z.literal("")),
+  defaultDurationMinutes: z.number().int().min(5).max(600),
+  priceCents: z.number().int().min(0),
+  taxRateBps: z.number().int().min(0).max(10000),
+});
+
+export type ServiceInput = z.infer<typeof serviceSchema>;
+
 export const employeeSchema = z.object({
   email: z.string().trim().email().max(255),
   firstName: z.string().trim().min(1, "Required").max(120),

@@ -40,6 +40,34 @@ export async function listLocations(organizationId: string) {
     .where(eq(locations.organizationId, organizationId));
 }
 
+export async function listServicesWithPrice(organizationId: string) {
+  const db = getDb();
+  const { services, servicePrices } = await import("@/lib/db/schema");
+  const { desc, isNull, and: andOp } = await import("drizzle-orm");
+  const rows = await db
+    .select({
+      id: services.id,
+      nameEn: services.nameEn,
+      nameEs: services.nameEs,
+      category: services.category,
+      defaultDurationMinutes: services.defaultDurationMinutes,
+      isActive: services.isActive,
+      priceCents: servicePrices.priceCents,
+      taxRateBps: servicePrices.taxRateBps,
+    })
+    .from(services)
+    .leftJoin(
+      servicePrices,
+      andOp(
+        eq(servicePrices.serviceId, services.id),
+        isNull(servicePrices.effectiveTo),
+      ),
+    )
+    .where(eq(services.organizationId, organizationId))
+    .orderBy(desc(services.createdAt));
+  return rows;
+}
+
 export async function listEmployees(organizationId: string) {
   const db = getDb();
   return db
