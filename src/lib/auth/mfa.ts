@@ -20,7 +20,19 @@ export const MFA_REQUIRED_ROLES: readonly Role[] = [
 /** When true, every role is forced through MFA (configurable rollout). */
 export const MFA_REQUIRED_FOR_ALL = false;
 
+/**
+ * Global enforcement switch (env `MFA_ENFORCEMENT`).
+ * - unset / "on" (default): MFA is enforced — production-safe.
+ * - "off": MFA is disabled for ALL roles — intended ONLY for
+ *   development/testing. Never set to "off" in a production environment
+ *   handling real PHI (FR-AUTH-002).
+ */
+export function mfaEnforcementEnabled(): boolean {
+  return (process.env.MFA_ENFORCEMENT ?? "on").toLowerCase() !== "off";
+}
+
 export function requiresMfa(roles: Role[]): boolean {
+  if (!mfaEnforcementEnabled()) return false;
   if (MFA_REQUIRED_FOR_ALL) return true;
   return roles.some((r) => MFA_REQUIRED_ROLES.includes(r));
 }
