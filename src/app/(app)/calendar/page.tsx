@@ -163,6 +163,7 @@ export default async function CalendarPage({
                 practitioner={`${a.employeeFirst} ${a.employeeLast}`}
                 service={a.serviceNameEn}
                 canUpdate={can(roles, "patients_demographic", "update")}
+                canStartEncounter={can(roles, "clinical_notes", "create")}
               />
             ))}
           </ul>

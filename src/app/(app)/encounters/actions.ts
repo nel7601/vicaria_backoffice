@@ -6,6 +6,7 @@ import { authorize } from "@/lib/auth/authorize";
 import { recordAudit } from "@/lib/audit/record";
 import { getDb } from "@/lib/db";
 import {
+  appointments,
   encounterAmendments,
   encounters,
   observations,
@@ -34,6 +35,82 @@ export interface EncounterResult {
 /** Resolve the acting practitioner's employee id, or null. */
 async function actingPractitioner(orgId: string, authId: string) {
   return getEmployeeIdForAuthUser(orgId, authId);
+}
+
+/**
+ * FR-APT-006 + FR-ENC-001: start (or resume) the consultation for an
+ * appointment. If the appointment already has an encounter, returns it instead
+ * of creating a duplicate (one encounter per appointment by default rule).
+ */
+export async function startEncounterFromAppointmentAction(
+  appointmentId: string,
+): Promise<EncounterResult> {
+  const user = await authorize("clinical_notes", "create");
+  const org = await getPrimaryOrganization();
+  if (!org) return { ok: false, error: "Organization not found." };
+
+  const practitionerId = await actingPractitioner(org.id, user.authId);
+  if (!practitionerId) {
+    return { ok: false, error: "No practitioner profile linked to your account." };
+  }
+
+  const db = getDb();
+  const [appt] = await db
+    .select({
+      id: appointments.id,
+      patientId: appointments.patientId,
+      serviceId: appointments.serviceId,
+      modality: appointments.modality,
+    })
+    .from(appointments)
+    .where(
+      and(
+        eq(appointments.organizationId, org.id),
+        eq(appointments.id, appointmentId),
+      ),
+    )
+    .limit(1);
+  if (!appt) return { ok: false, error: "Appointment not found." };
+
+  // Resume the existing encounter if one is already linked (FR-ENC-001).
+  const [existing] = await db
+    .select({ id: encounters.id })
+    .from(encounters)
+    .where(
+      and(
+        eq(encounters.organizationId, org.id),
+        eq(encounters.appointmentId, appointmentId),
+      ),
+    )
+    .limit(1);
+  if (existing) return { ok: true, encounterId: existing.id };
+
+  const [created] = await db
+    .insert(encounters)
+    .values({
+      organizationId: org.id,
+      patientId: appt.patientId,
+      practitionerId,
+      serviceId: appt.serviceId,
+      appointmentId: appt.id,
+      modality: appt.modality,
+      status: "draft",
+      startedAt: new Date(),
+      contentSnapshot: {},
+    })
+    .returning();
+
+  await recordAudit({
+    organizationId: org.id,
+    actorUserId: user.authId,
+    action: "create",
+    entityType: "encounter",
+    entityId: created.id,
+    after: { status: "draft", appointmentId: appt.id },
+  });
+
+  revalidatePath("/encounters");
+  return { ok: true, encounterId: created.id };
 }
 
 /** FR-ENC-001: create a draft encounter authored by the current practitioner. */
