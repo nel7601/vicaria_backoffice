@@ -11,10 +11,11 @@ import { listPatients } from "@/lib/db/queries/patients";
 import { listActiveServices } from "@/lib/db/queries/catalog";
 import { NewAppointmentForm } from "./new-appointment-form";
 import { AppointmentRow } from "./appointment-row";
-
-function isoDate(d: Date): string {
-  return d.toISOString().slice(0, 10);
-}
+import {
+  clinicDateString,
+  clinicDayWindow,
+  shiftDay,
+} from "@/lib/domain/timezone";
 
 export default async function CalendarPage({
   searchParams,
@@ -34,11 +35,13 @@ export default async function CalendarPage({
     );
   }
 
-  const dayStr = date ?? isoDate(new Date());
-  const from = new Date(`${dayStr}T00:00:00`);
-  const to = new Date(from.getTime() + 24 * 60 * 60 * 1000);
-  const prevDay = isoDate(new Date(from.getTime() - 24 * 60 * 60 * 1000));
-  const nextDay = isoDate(to);
+  // "Today" and the day window are computed in the clinic timezone
+  // (America/Toronto), not server UTC, so evening appointments stay on the
+  // right day (A-05 / NFR-07).
+  const dayStr = date ?? clinicDateString(new Date());
+  const { from, to } = clinicDayWindow(dayStr);
+  const prevDay = shiftDay(dayStr, -1);
+  const nextDay = shiftDay(dayStr, 1);
 
   const canCreate = can(roles, "patients_demographic", "create");
 
@@ -107,6 +110,12 @@ export default async function CalendarPage({
               className="rounded-md border border-border px-3 py-1.5 text-sm hover:bg-background"
             >
               Next →
+            </Link>
+            <Link
+              href={`/calendar${employee ? `?employee=${employee}` : ""}`}
+              className="rounded-md border border-border px-3 py-1.5 text-sm text-primary hover:bg-background"
+            >
+              Today
             </Link>
           </div>
           <form method="get" className="flex items-center gap-2">

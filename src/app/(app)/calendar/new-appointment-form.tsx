@@ -59,6 +59,15 @@ export function NewAppointmentForm({
         reset();
         setOpen(false);
         setMessage(null);
+        // Jump the agenda to the appointment's day (clinic timezone) so the
+        // new appointment is immediately visible.
+        const dayStr = new Intl.DateTimeFormat("en-CA", {
+          timeZone: "America/Toronto",
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+        }).format(start);
+        router.push(`/calendar?date=${dayStr}`);
         router.refresh();
       } else {
         setMessage(res.error ?? "Could not create appointment.");
