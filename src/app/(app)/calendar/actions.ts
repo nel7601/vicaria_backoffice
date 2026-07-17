@@ -93,7 +93,7 @@ export async function createAppointmentAction(
       appointmentId: appt.id,
       fromStatus: null,
       toStatus: "scheduled",
-      changedBy: user.authId,
+      changedBy: user.dbUserId,
     });
     return appt;
   });
@@ -162,7 +162,7 @@ export async function changeAppointmentStatusAction(
       fromStatus: from,
       toStatus: to,
       reason: parsed.data.reason ?? null,
-      changedBy: user.authId,
+      changedBy: user.dbUserId,
     });
   });
 

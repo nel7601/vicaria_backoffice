@@ -264,7 +264,7 @@ export async function recordPaymentAction(raw: unknown): Promise<BillingResult> 
       status: needsVerification ? "pending" : "confirmed",
       amountCents: parsed.data.amountCents,
       currency: org.currency,
-      receivedBy: user.authId,
+      receivedBy: user.dbUserId,
       reference: parsed.data.reference ?? null,
       etransferSenderName: parsed.data.etransferSenderName ?? null,
       etransferSenderEmail: parsed.data.etransferSenderEmail || null,
@@ -364,7 +364,7 @@ export async function verifyEtransferAction(paymentId: string): Promise<BillingR
     .update(payments)
     .set({
       status: "confirmed",
-      verifiedBy: user.authId,
+      verifiedBy: user.dbUserId,
       verifiedAt: new Date(),
       updatedAt: new Date(),
     })
@@ -507,7 +507,7 @@ export async function refundAction(raw: unknown): Promise<BillingResult> {
       paymentId: payment.id,
       amountCents: parsed.data.amountCents,
       reason: parsed.data.reason,
-      processedBy: user.authId,
+      processedBy: user.dbUserId,
     });
     const newRefunded = already + parsed.data.amountCents;
     await tx
@@ -551,7 +551,7 @@ export async function creditNoteAction(raw: unknown): Promise<BillingResult> {
       invoiceId: parsed.data.invoiceId,
       amountCents: parsed.data.amountCents,
       reason: parsed.data.reason,
-      issuedBy: user.authId,
+      issuedBy: user.dbUserId,
     })
     .returning();
 

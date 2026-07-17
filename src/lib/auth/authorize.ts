@@ -1,3 +1,6 @@
+import { eq } from "drizzle-orm";
+import { getDb } from "@/lib/db";
+import { users } from "@/lib/db/schema";
 import { getSessionUser, type SessionUser } from "./session";
 import { can, type Action, type Resource } from "./rbac";
 
@@ -32,14 +35,18 @@ export async function requireUser(): Promise<SessionUser> {
   return user;
 }
 
+/** SessionUser plus the local users.id row that DB foreign keys reference. */
+export type AuthorizedUser = SessionUser & { dbUserId: string | null };
+
 /**
  * Assert the current user may perform `action` on `resource`. Returns the
- * session user so callers can use its roles/scopes for row/field filtering.
+ * session user (with the local DB user id resolved) so callers can use its
+ * roles/scopes for filtering and its dbUserId for actor foreign keys.
  */
 export async function authorize(
   resource: Resource,
   action: Action,
-): Promise<SessionUser> {
+): Promise<AuthorizedUser> {
   const user = await requireUser();
 
   // A privileged role that hasn't cleared MFA has no effective authority.
@@ -50,5 +57,21 @@ export async function authorize(
   if (!can(user.roles, resource, action)) {
     throw new AuthorizationError(resource, action);
   }
-  return user;
+
+  // Resolve the local users.id (FK target for signed_by/received_by/etc.).
+  // Null when no local row is linked yet; writers must handle that.
+  let dbUserId: string | null = null;
+  try {
+    const db = getDb();
+    const [row] = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(eq(users.authUserId, user.authId))
+      .limit(1);
+    dbUserId = row?.id ?? null;
+  } catch {
+    dbUserId = null;
+  }
+
+  return { ...user, dbUserId };
 }

@@ -165,7 +165,7 @@ export async function signEncounterAction(id: string): Promise<EncounterResult> 
     .set({
       status: "signed",
       signedAt: new Date(),
-      signedBy: user.authId,
+      signedBy: user.dbUserId,
       contentHash: hash,
       updatedAt: new Date(),
     })
@@ -203,13 +203,19 @@ export async function addAmendmentAction(
     return { ok: false, error: "Only signed notes can be amended." };
   }
 
+  // authored_by is a required FK to the local users table.
+  const authorId = user.dbUserId;
+  if (!authorId) {
+    return { ok: false, error: "No user profile linked to your account." };
+  }
+
   const db = getDb();
   await db.transaction(async (tx) => {
     await tx.insert(encounterAmendments).values({
       organizationId: org.id,
       encounterId: id,
       body: parsed.data.body,
-      authoredBy: user.authId,
+      authoredBy: authorId,
       contentHash: computeContentHash({ body: parsed.data.body }, ""),
     });
     await tx

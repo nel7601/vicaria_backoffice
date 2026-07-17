@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
+import { eq, or } from "drizzle-orm";
 import { getDb } from "@/lib/db";
-import { accessLogs, auditEvents } from "@/lib/db/schema";
+import { accessLogs, auditEvents, users } from "@/lib/db/schema";
 
 /**
  * Audit + access logging (spec §12.2, SEC-05).
@@ -33,6 +34,22 @@ export interface AuditInput {
   userAgent?: string;
 }
 
+/**
+ * Resolve an actor reference to the local users.id the FK expects. Callers may
+ * pass either the local users.id or the Supabase auth user id; unknown values
+ * resolve to null (system actor) instead of breaking the audited operation.
+ */
+async function resolveActor(actorId?: string): Promise<string | null> {
+  if (!actorId) return null;
+  const db = getDb();
+  const [row] = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(or(eq(users.id, actorId), eq(users.authUserId, actorId)))
+    .limit(1);
+  return row?.id ?? null;
+}
+
 export async function recordAudit(input: AuditInput): Promise<void> {
   if (SENSITIVE_ACTIONS.has(input.action) && !input.reason) {
     throw new Error(`Audit action "${input.action}" requires a reason.`);
@@ -40,7 +57,7 @@ export async function recordAudit(input: AuditInput): Promise<void> {
   const db = getDb();
   await db.insert(auditEvents).values({
     organizationId: input.organizationId,
-    actorUserId: input.actorUserId,
+    actorUserId: await resolveActor(input.actorUserId),
     action: input.action,
     entityType: input.entityType,
     entityId: input.entityId,
@@ -67,7 +84,7 @@ export async function recordAccess(input: AccessInput): Promise<void> {
   const db = getDb();
   await db.insert(accessLogs).values({
     organizationId: input.organizationId,
-    actorUserId: input.actorUserId,
+    actorUserId: await resolveActor(input.actorUserId),
     patientId: input.patientId,
     action: input.action,
     route: input.route,
