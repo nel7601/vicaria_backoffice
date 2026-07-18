@@ -1,11 +1,12 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { employeeSchema, type EmployeeInput } from "@/lib/schemas/settings";
 import { ROLES } from "@/lib/auth/rbac";
-import { createEmployeeAction } from "./actions";
+import { createEmployeeAction, updateEmployeeAction } from "./actions";
 import { Button } from "@/components/ui/button";
 import { Field, Input, inputClass } from "@/components/ui/field";
 
@@ -28,8 +29,55 @@ export function EmployeesSection({
   employees: EmployeeRow[];
   canEdit: boolean;
 }) {
+  const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [message, setMessage] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [edit, setEdit] = useState({
+    firstName: "",
+    lastName: "",
+    title: "",
+    isPractitioner: false,
+    isActive: true,
+    roles: [] as string[],
+  });
+  const [editError, setEditError] = useState<string | null>(null);
+
+  function openEdit(e: EmployeeRow) {
+    setEdit({
+      firstName: e.firstName,
+      lastName: e.lastName,
+      title: e.title ?? "",
+      isPractitioner: e.isPractitioner,
+      isActive: e.isActive,
+      roles: [...e.roles],
+    });
+    setEditError(null);
+    setEditingId(e.id);
+  }
+
+  function toggleRole(role: string) {
+    setEdit((s) => ({
+      ...s,
+      roles: s.roles.includes(role)
+        ? s.roles.filter((r) => r !== role)
+        : [...s.roles, role],
+    }));
+  }
+
+  function saveEdit() {
+    if (!editingId) return;
+    setEditError(null);
+    startTransition(async () => {
+      const res = await updateEmployeeAction(editingId, edit);
+      if (res.ok) {
+        setEditingId(null);
+        router.refresh();
+      } else {
+        setEditError(res.error ?? "Could not save employee.");
+      }
+    });
+  }
 
   const {
     register,
@@ -90,10 +138,100 @@ export function EmployeesSection({
                   inactive
                 </span>
               )}
+              {canEdit && (
+                <button
+                  onClick={() => openEdit(e)}
+                  className="text-primary underline-offset-2 hover:underline"
+                >
+                  Edit
+                </button>
+              )}
             </div>
           </li>
         ))}
       </ul>
+
+      {canEdit && editingId && (
+        <div className="grid grid-cols-1 gap-3 rounded-md border border-border p-4 sm:grid-cols-2">
+          <div className="text-sm font-semibold sm:col-span-2">Edit employee</div>
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="font-medium">First name</span>
+            <input
+              className={inputClass}
+              value={edit.firstName}
+              onChange={(e) => setEdit((s) => ({ ...s, firstName: e.target.value }))}
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="font-medium">Last name</span>
+            <input
+              className={inputClass}
+              value={edit.lastName}
+              onChange={(e) => setEdit((s) => ({ ...s, lastName: e.target.value }))}
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="font-medium">Title</span>
+            <input
+              className={inputClass}
+              value={edit.title}
+              onChange={(e) => setEdit((s) => ({ ...s, title: e.target.value }))}
+            />
+          </label>
+          <div className="flex items-end gap-4 text-sm">
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={edit.isPractitioner}
+                onChange={(e) =>
+                  setEdit((s) => ({ ...s, isPractitioner: e.target.checked }))
+                }
+              />
+              Practitioner
+            </label>
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={edit.isActive}
+                onChange={(e) =>
+                  setEdit((s) => ({ ...s, isActive: e.target.checked }))
+                }
+              />
+              Active
+            </label>
+          </div>
+          <fieldset className="sm:col-span-2">
+            <legend className="text-sm font-medium">Roles</legend>
+            <div className="mt-2 flex flex-wrap gap-3 text-sm">
+              {ROLES.map((r) => (
+                <label key={r} className="flex items-center gap-1.5">
+                  <input
+                    type="checkbox"
+                    checked={edit.roles.includes(r)}
+                    onChange={() => toggleRole(r)}
+                  />
+                  {r}
+                </label>
+              ))}
+            </div>
+          </fieldset>
+          <p className="text-xs text-muted sm:col-span-2">
+            Deactivating blocks the account&apos;s access. Role changes apply to
+            the person&apos;s next sign-in and are audited.
+          </p>
+          {editError && (
+            <p className="text-sm text-danger sm:col-span-2">{editError}</p>
+          )}
+          <div className="flex gap-2 sm:col-span-2">
+            <Button onClick={saveEdit} disabled={pending || !edit.firstName || !edit.lastName}>
+              {pending ? "Saving…" : "Save changes"}
+            </Button>
+            <Button variant="ghost" onClick={() => setEditingId(null)}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      )}
 
       {canEdit && (
         <form

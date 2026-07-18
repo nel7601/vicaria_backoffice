@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { inputClass } from "@/components/ui/field";
 import { formatCents } from "@/lib/domain/money";
-import { createServiceAction } from "./actions";
+import { createServiceAction, updateServiceAction } from "./actions";
 
 export interface ServiceRow {
   id: string;
@@ -16,6 +16,38 @@ export interface ServiceRow {
   isActive: boolean;
   priceCents: number | null;
   taxRateBps: number | null;
+}
+
+interface FormState {
+  nameEn: string;
+  nameEs: string;
+  category: string;
+  duration: string;
+  price: string;
+  taxPct: string;
+  isActive: boolean;
+}
+
+const EMPTY: FormState = {
+  nameEn: "",
+  nameEs: "",
+  category: "",
+  duration: "60",
+  price: "",
+  taxPct: "13",
+  isActive: true,
+};
+
+function toForm(s: ServiceRow): FormState {
+  return {
+    nameEn: s.nameEn,
+    nameEs: s.nameEs,
+    category: s.category ?? "",
+    duration: String(s.defaultDurationMinutes),
+    price: s.priceCents !== null ? (s.priceCents / 100).toFixed(2) : "",
+    taxPct: s.taxRateBps !== null ? (s.taxRateBps / 100).toString() : "0",
+    isActive: s.isActive,
+  };
 }
 
 export function ServicesSection({
@@ -30,35 +62,50 @@ export function ServicesSection({
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [open, setOpen] = useState(false);
+  // null = closed, "new" = creating, otherwise the service id being edited.
+  const [editing, setEditing] = useState<string | null>(null);
+  const [form, setForm] = useState<FormState>(EMPTY);
   const [error, setError] = useState<string | null>(null);
-  const [nameEn, setNameEn] = useState("");
-  const [nameEs, setNameEs] = useState("");
-  const [category, setCategory] = useState("");
-  const [duration, setDuration] = useState("60");
-  const [price, setPrice] = useState("");
-  const [taxPct, setTaxPct] = useState("13");
+
+  function openNew() {
+    setForm(EMPTY);
+    setError(null);
+    setEditing("new");
+  }
+
+  function openEdit(s: ServiceRow) {
+    setForm(toForm(s));
+    setError(null);
+    setEditing(s.id);
+  }
+
+  function set<K extends keyof FormState>(key: K, value: FormState[K]) {
+    setForm((f) => ({ ...f, [key]: value }));
+  }
 
   function submit() {
     setError(null);
+    const payload = {
+      nameEn: form.nameEn,
+      nameEs: form.nameEs,
+      category: form.category,
+      defaultDurationMinutes: Number(form.duration),
+      priceCents: Math.round(Number(form.price || "0") * 100),
+      taxRateBps: Math.round(Number(form.taxPct || "0") * 100),
+    };
     startTransition(async () => {
-      const res = await createServiceAction({
-        nameEn,
-        nameEs,
-        category,
-        defaultDurationMinutes: Number(duration),
-        priceCents: Math.round(Number(price || "0") * 100),
-        taxRateBps: Math.round(Number(taxPct || "0") * 100),
-      });
+      const res =
+        editing === "new"
+          ? await createServiceAction(payload)
+          : await updateServiceAction(editing!, {
+              ...payload,
+              isActive: form.isActive,
+            });
       if (res.ok) {
-        setNameEn("");
-        setNameEs("");
-        setCategory("");
-        setPrice("");
-        setOpen(false);
+        setEditing(null);
         router.refresh();
       } else {
-        setError(res.error ?? "Could not create service.");
+        setError(res.error ?? "Could not save service.");
       }
     });
   }
@@ -75,12 +122,14 @@ export function ServicesSection({
               <th className="py-2 pr-4">Duration</th>
               <th className="py-2 pr-4">Price</th>
               <th className="py-2 pr-4">Tax</th>
+              <th className="py-2 pr-4">Status</th>
+              {canEdit && <th className="py-2" />}
             </tr>
           </thead>
           <tbody>
             {services.length === 0 && (
               <tr>
-                <td colSpan={6} className="py-6 text-center text-muted">
+                <td colSpan={canEdit ? 8 : 7} className="py-6 text-center text-muted">
                   No services yet. Create the first one to use it in
                   appointments and invoices.
                 </td>
@@ -98,34 +147,62 @@ export function ServicesSection({
                 <td className="py-2 pr-4">
                   {s.taxRateBps !== null ? `${(s.taxRateBps / 100).toFixed(1)}%` : "—"}
                 </td>
+                <td className="py-2 pr-4">
+                  {s.isActive ? (
+                    <span className="text-success">active</span>
+                  ) : (
+                    <span className="text-muted">inactive</span>
+                  )}
+                </td>
+                {canEdit && (
+                  <td className="py-2 text-right">
+                    <button
+                      onClick={() => openEdit(s)}
+                      className="text-xs text-primary hover:underline"
+                    >
+                      Edit
+                    </button>
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>
         </table>
       </div>
 
-      {canEdit && !open && (
-        <Button variant="secondary" onClick={() => setOpen(true)}>
+      {canEdit && editing === null && (
+        <Button variant="secondary" onClick={openNew}>
           Add service
         </Button>
       )}
 
-      {canEdit && open && (
+      {canEdit && editing !== null && (
         <div className="grid grid-cols-1 gap-3 rounded-md border border-border p-4 sm:grid-cols-3">
+          <div className="text-sm font-semibold sm:col-span-3">
+            {editing === "new" ? "New service" : "Edit service"}
+          </div>
           <label className="flex flex-col gap-1 text-sm">
             <span className="font-medium">Name (EN)</span>
-            <input className={inputClass} value={nameEn} onChange={(e) => setNameEn(e.target.value)} />
+            <input
+              className={inputClass}
+              value={form.nameEn}
+              onChange={(e) => set("nameEn", e.target.value)}
+            />
           </label>
           <label className="flex flex-col gap-1 text-sm">
             <span className="font-medium">Nombre (ES)</span>
-            <input className={inputClass} value={nameEs} onChange={(e) => setNameEs(e.target.value)} />
+            <input
+              className={inputClass}
+              value={form.nameEs}
+              onChange={(e) => set("nameEs", e.target.value)}
+            />
           </label>
           <label className="flex flex-col gap-1 text-sm">
             <span className="font-medium">Category</span>
             <select
               className={inputClass}
-              value={category}
-              onChange={(e) => setCategory(e.target.value)}
+              value={form.category}
+              onChange={(e) => set("category", e.target.value)}
             >
               <option value="">None</option>
               {categories.map((c) => (
@@ -147,8 +224,8 @@ export function ServicesSection({
               min={5}
               step={5}
               className={inputClass}
-              value={duration}
-              onChange={(e) => setDuration(e.target.value)}
+              value={form.duration}
+              onChange={(e) => set("duration", e.target.value)}
             />
           </label>
           <label className="flex flex-col gap-1 text-sm">
@@ -159,8 +236,8 @@ export function ServicesSection({
               step="0.01"
               className={inputClass}
               placeholder="150.00"
-              value={price}
-              onChange={(e) => setPrice(e.target.value)}
+              value={form.price}
+              onChange={(e) => set("price", e.target.value)}
             />
           </label>
           <label className="flex flex-col gap-1 text-sm">
@@ -171,19 +248,38 @@ export function ServicesSection({
               max={100}
               step="0.5"
               className={inputClass}
-              value={taxPct}
-              onChange={(e) => setTaxPct(e.target.value)}
+              value={form.taxPct}
+              onChange={(e) => set("taxPct", e.target.value)}
             />
           </label>
+          {editing !== "new" && (
+            <label className="flex items-center gap-2 text-sm sm:col-span-3">
+              <input
+                type="checkbox"
+                checked={form.isActive}
+                onChange={(e) => set("isActive", e.target.checked)}
+              />
+              Active (inactive services stop appearing in new appointments)
+            </label>
+          )}
           {error && <p className="text-sm text-danger sm:col-span-3">{error}</p>}
           <div className="flex gap-2 sm:col-span-3">
-            <Button onClick={submit} disabled={pending || !nameEn || !nameEs}>
-              {pending ? "Saving…" : "Create service"}
+            <Button
+              onClick={submit}
+              disabled={pending || !form.nameEn || !form.nameEs}
+            >
+              {pending ? "Saving…" : editing === "new" ? "Create service" : "Save changes"}
             </Button>
-            <Button variant="ghost" onClick={() => setOpen(false)}>
+            <Button variant="ghost" onClick={() => setEditing(null)}>
               Cancel
             </Button>
           </div>
+          {editing !== "new" && (
+            <p className="text-xs text-muted sm:col-span-3">
+              Price changes are versioned: issued invoices keep their original
+              amounts (FR-SVC-001).
+            </p>
+          )}
         </div>
       )}
     </div>

@@ -22,7 +22,11 @@ import {
   employeeSchema,
   locationSchema,
   serviceSchema,
+  updateCategorySchema,
+  updateEmployeeSchema,
+  updateServiceSchema,
 } from "@/lib/schemas/settings";
+import { and, isNull } from "drizzle-orm";
 
 export interface ActionResult {
   ok: boolean;
@@ -218,6 +222,277 @@ export async function createServiceAction(raw: unknown): Promise<ActionResult> {
 
   revalidatePath("/settings");
   revalidatePath("/calendar");
+  return { ok: true };
+}
+
+/** Update a service; a price/tax change closes the current price row and
+ * versions in a new one so issued invoices are never altered (FR-SVC-001). */
+export async function updateServiceAction(
+  serviceId: string,
+  raw: unknown,
+): Promise<ActionResult> {
+  const user = await authorize("configuration", "update");
+  const parsed = updateServiceSchema.safeParse(raw);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
+  }
+  const org = await getPrimaryOrganization();
+  if (!org) return { ok: false, error: "Organization not found." };
+
+  const data = parsed.data;
+  const db = getDb();
+
+  const [existing] = await db
+    .select()
+    .from(services)
+    .where(and(eq(services.organizationId, org.id), eq(services.id, serviceId)))
+    .limit(1);
+  if (!existing) return { ok: false, error: "Service not found." };
+
+  await db.transaction(async (tx) => {
+    await tx
+      .update(services)
+      .set({
+        nameEn: data.nameEn,
+        nameEs: data.nameEs,
+        category: blankToNull(data.category),
+        defaultDurationMinutes: data.defaultDurationMinutes,
+        isActive: data.isActive,
+        updatedAt: new Date(),
+      })
+      .where(eq(services.id, serviceId));
+
+    const [currentPrice] = await tx
+      .select()
+      .from(servicePrices)
+      .where(
+        and(
+          eq(servicePrices.serviceId, serviceId),
+          isNull(servicePrices.effectiveTo),
+        ),
+      )
+      .limit(1);
+
+    const priceChanged =
+      !currentPrice ||
+      currentPrice.priceCents !== data.priceCents ||
+      currentPrice.taxRateBps !== data.taxRateBps;
+
+    if (priceChanged) {
+      const now = new Date();
+      if (currentPrice) {
+        await tx
+          .update(servicePrices)
+          .set({ effectiveTo: now, updatedAt: now })
+          .where(eq(servicePrices.id, currentPrice.id));
+      }
+      await tx.insert(servicePrices).values({
+        organizationId: org.id,
+        serviceId,
+        priceCents: data.priceCents,
+        taxRateBps: data.taxRateBps,
+        effectiveFrom: now,
+      });
+    }
+  });
+
+  await recordAudit({
+    organizationId: org.id,
+    actorUserId: user.authId,
+    action: "update",
+    entityType: "service",
+    entityId: serviceId,
+    before: { nameEn: existing.nameEn, isActive: existing.isActive },
+    after: {
+      nameEn: data.nameEn,
+      isActive: data.isActive,
+      priceCents: data.priceCents,
+      taxRateBps: data.taxRateBps,
+    },
+  });
+
+  revalidatePath("/settings");
+  revalidatePath("/calendar");
+  return { ok: true };
+}
+
+/** Update a category; renaming propagates to services using the old name. */
+export async function updateCategoryAction(
+  categoryId: string,
+  raw: unknown,
+): Promise<ActionResult> {
+  const user = await authorize("configuration", "update");
+  const parsed = updateCategorySchema.safeParse(raw);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
+  }
+  const org = await getPrimaryOrganization();
+  if (!org) return { ok: false, error: "Organization not found." };
+
+  const db = getDb();
+  const [existing] = await db
+    .select()
+    .from(serviceCategories)
+    .where(
+      and(
+        eq(serviceCategories.organizationId, org.id),
+        eq(serviceCategories.id, categoryId),
+      ),
+    )
+    .limit(1);
+  if (!existing) return { ok: false, error: "Category not found." };
+
+  const data = parsed.data;
+  try {
+    await db.transaction(async (tx) => {
+      await tx
+        .update(serviceCategories)
+        .set({
+          name: data.name,
+          nameEs: blankToNull(data.nameEs),
+          isActive: data.isActive,
+          updatedAt: new Date(),
+        })
+        .where(eq(serviceCategories.id, categoryId));
+
+      // Keep services consistent when the category is renamed.
+      if (existing.name !== data.name) {
+        await tx
+          .update(services)
+          .set({ category: data.name, updatedAt: new Date() })
+          .where(
+            and(
+              eq(services.organizationId, org.id),
+              eq(services.category, existing.name),
+            ),
+          );
+      }
+    });
+  } catch (e) {
+    const msg =
+      e instanceof Error && e.message.includes("uq_service_category")
+        ? "That category name already exists."
+        : "Could not update category.";
+    return { ok: false, error: msg };
+  }
+
+  await recordAudit({
+    organizationId: org.id,
+    actorUserId: user.authId,
+    action: "update",
+    entityType: "service_category",
+    entityId: categoryId,
+    before: { name: existing.name, isActive: existing.isActive },
+    after: { name: data.name, isActive: data.isActive },
+  });
+
+  revalidatePath("/settings");
+  return { ok: true };
+}
+
+/**
+ * Update an employee: profile fields, active flag and role set. Role changes
+ * are audited as permission_change; deactivation best-effort revokes access by
+ * banning the linked auth user (FR-AUTH-003).
+ */
+export async function updateEmployeeAction(
+  employeeId: string,
+  raw: unknown,
+): Promise<ActionResult> {
+  const user = await authorize("users_roles", "update");
+  const parsed = updateEmployeeSchema.safeParse(raw);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
+  }
+  const org = await getPrimaryOrganization();
+  if (!org) return { ok: false, error: "Organization not found." };
+
+  const data = parsed.data;
+  const db = getDb();
+
+  const [emp] = await db
+    .select({
+      id: employees.id,
+      userId: employees.userId,
+    })
+    .from(employees)
+    .where(
+      and(eq(employees.organizationId, org.id), eq(employees.id, employeeId)),
+    )
+    .limit(1);
+  if (!emp) return { ok: false, error: "Employee not found." };
+
+  const [target] = await db
+    .select({ authUserId: users.authUserId, isActive: users.isActive })
+    .from(users)
+    .where(eq(users.id, emp.userId))
+    .limit(1);
+
+  const previousRoles = (
+    await db
+      .select({ role: userRoles.role })
+      .from(userRoles)
+      .where(eq(userRoles.userId, emp.userId))
+  ).map((r) => r.role);
+
+  await db.transaction(async (tx) => {
+    await tx
+      .update(employees)
+      .set({
+        firstName: data.firstName,
+        lastName: data.lastName,
+        title: blankToNull(data.title),
+        isPractitioner: data.isPractitioner,
+        updatedAt: new Date(),
+      })
+      .where(eq(employees.id, employeeId));
+
+    await tx
+      .update(users)
+      .set({ isActive: data.isActive, updatedAt: new Date() })
+      .where(eq(users.id, emp.userId));
+
+    // Replace the role set.
+    await tx.delete(userRoles).where(eq(userRoles.userId, emp.userId));
+    for (const role of data.roles) {
+      await tx.insert(userRoles).values({
+        organizationId: org.id,
+        userId: emp.userId,
+        role,
+      });
+    }
+  });
+
+  // Best-effort: sync the auth account (JWT role claims + ban on deactivate).
+  if (target?.authUserId) {
+    try {
+      const { createAdminClient } = await import("@/lib/supabase/admin");
+      const admin = createAdminClient();
+      await admin.auth.admin.updateUserById(target.authUserId, {
+        app_metadata: { roles: data.roles, organization_id: org.id },
+        ban_duration: data.isActive ? "none" : "876000h",
+      });
+    } catch (e) {
+      console.error("Auth sync failed (roles/ban):", e);
+    }
+  }
+
+  const rolesChanged =
+    previousRoles.length !== data.roles.length ||
+    previousRoles.some((r) => !(data.roles as string[]).includes(r));
+
+  await recordAudit({
+    organizationId: org.id,
+    actorUserId: user.authId,
+    action: rolesChanged ? "permission_change" : "update",
+    entityType: "employee",
+    entityId: employeeId,
+    before: { roles: previousRoles, isActive: target?.isActive },
+    after: { roles: data.roles, isActive: data.isActive },
+    reason: rolesChanged ? "Roles updated via Settings" : undefined,
+  });
+
+  revalidatePath("/settings");
   return { ok: true };
 }
 

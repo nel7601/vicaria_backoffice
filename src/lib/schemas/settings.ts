@@ -45,6 +45,42 @@ export const serviceSchema = z.object({
 
 export type ServiceInput = z.infer<typeof serviceSchema>;
 
+/** Service update — same fields plus active flag. */
+export const updateServiceSchema = serviceSchema.extend({
+  isActive: z.boolean(),
+});
+
+export type UpdateServiceInput = z.infer<typeof updateServiceSchema>;
+
+export const updateCategorySchema = z.object({
+  name: z.string().trim().min(1, "Required").max(80),
+  nameEs: z.string().trim().max(80).optional().or(z.literal("")),
+  isActive: z.boolean(),
+});
+
+export type UpdateCategoryInput = z.infer<typeof updateCategorySchema>;
+
+export const roleEnum = z.enum([
+  "owner",
+  "administrator",
+  "practitioner",
+  "reception",
+  "billing",
+  "marketing",
+  "auditor",
+]);
+
+export const updateEmployeeSchema = z.object({
+  firstName: z.string().trim().min(1, "Required").max(120),
+  lastName: z.string().trim().min(1, "Required").max(120),
+  title: z.string().trim().max(120).optional().or(z.literal("")),
+  isPractitioner: z.boolean(),
+  isActive: z.boolean(),
+  roles: z.array(roleEnum),
+});
+
+export type UpdateEmployeeInput = z.infer<typeof updateEmployeeSchema>;
+
 export const employeeSchema = z.object({
   email: z.string().trim().email().max(255),
   firstName: z.string().trim().min(1, "Required").max(120),
