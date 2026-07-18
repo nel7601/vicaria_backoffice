@@ -5,13 +5,13 @@ import {
   getCompanySettings,
   getPrimaryOrganization,
   listEmployees,
-  listLocations,
+  listServiceCategories,
   listServicesWithPrice,
 } from "@/lib/db/queries/organization";
 import { CompanyForm } from "./company-form";
-import { LocationsSection, type LocationRow } from "./locations-section";
 import { EmployeesSection, type EmployeeRow } from "./employees-section";
 import { ServicesSection, type ServiceRow } from "./services-section";
+import { CategoriesSection, type CategoryRow } from "./categories-section";
 
 /**
  * Settings (spec §7, Phase 1). Company + locations + employees/roles.
@@ -39,9 +39,9 @@ export default async function SettingsPage() {
   // Degrade gracefully when the database is not configured (dev without env).
   let dbError: string | null = null;
   let companyDefaults = {};
-  let locations: LocationRow[] = [];
   let employees: EmployeeRow[] = [];
   let services: ServiceRow[] = [];
+  let categories: CategoryRow[] = [];
 
   try {
     const org = await getPrimaryOrganization();
@@ -60,9 +60,9 @@ export default async function SettingsPage() {
         legalFooterEn: settings?.legalFooterEn ?? "",
         legalFooterEs: settings?.legalFooterEs ?? "",
       };
-      locations = (await listLocations(org.id)) as LocationRow[];
       employees = (await listEmployees(org.id)) as EmployeeRow[];
       services = (await listServicesWithPrice(org.id)) as ServiceRow[];
+      categories = (await listServiceCategories(org.id)) as CategoryRow[];
     }
   } catch (e) {
     dbError =
@@ -93,16 +93,20 @@ export default async function SettingsPage() {
       </Card>
 
       <Card>
-        <CardTitle>Locations</CardTitle>
+        <CardTitle>Categories</CardTitle>
         <div className="mt-4">
-          <LocationsSection locations={locations} canEdit={canEditCompany} />
+          <CategoriesSection categories={categories} canEdit={canEditCompany} />
         </div>
       </Card>
 
       <Card>
         <CardTitle>Services &amp; prices</CardTitle>
         <div className="mt-4">
-          <ServicesSection services={services} canEdit={canEditCompany} />
+          <ServicesSection
+            services={services}
+            categories={categories.map((c) => c.name)}
+            canEdit={canEditCompany}
+          />
         </div>
       </Card>
 

@@ -10,6 +10,7 @@ import {
   employees,
   locations,
   organizations,
+  serviceCategories,
   servicePrices,
   services,
   userRoles,
@@ -122,6 +123,47 @@ export async function createLocationAction(raw: unknown): Promise<ActionResult> 
     entityId: created.id,
     after: created,
   });
+
+  revalidatePath("/settings");
+  return { ok: true };
+}
+
+/** Create a service category (controlled vocabulary for filters/reports). */
+export async function createCategoryAction(raw: unknown): Promise<ActionResult> {
+  const user = await authorize("configuration", "update");
+  const name = typeof raw === "object" && raw !== null ? (raw as { name?: string }).name : undefined;
+  const nameEs = typeof raw === "object" && raw !== null ? (raw as { nameEs?: string }).nameEs : undefined;
+  const clean = (name ?? "").trim();
+  if (!clean || clean.length > 80) {
+    return { ok: false, error: "Category name is required (max 80 chars)." };
+  }
+  const org = await getPrimaryOrganization();
+  if (!org) return { ok: false, error: "Organization not found." };
+
+  const db = getDb();
+  try {
+    const [created] = await db
+      .insert(serviceCategories)
+      .values({
+        organizationId: org.id,
+        name: clean,
+        nameEs: blankToNull((nameEs ?? "").trim()),
+      })
+      .returning();
+    await recordAudit({
+      organizationId: org.id,
+      actorUserId: user.authId,
+      action: "create",
+      entityType: "service_category",
+      entityId: created.id,
+      after: { name: clean },
+    });
+  } catch (e) {
+    const msg = e instanceof Error && e.message.includes("uq_service_category")
+      ? "That category already exists."
+      : "Could not create category.";
+    return { ok: false, error: msg };
+  }
 
   revalidatePath("/settings");
   return { ok: true };

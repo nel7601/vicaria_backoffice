@@ -20,9 +20,12 @@ export interface ServiceRow {
 
 export function ServicesSection({
   services,
+  categories,
   canEdit,
 }: {
   services: ServiceRow[];
+  /** Category names from the controlled vocabulary (Settings → Categories). */
+  categories: string[];
   canEdit: boolean;
 }) {
   const router = useRouter();
@@ -119,12 +122,23 @@ export function ServicesSection({
           </label>
           <label className="flex flex-col gap-1 text-sm">
             <span className="font-medium">Category</span>
-            <input
+            <select
               className={inputClass}
-              placeholder="coaching / skin / wellness…"
               value={category}
               onChange={(e) => setCategory(e.target.value)}
-            />
+            >
+              <option value="">None</option>
+              {categories.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+            {categories.length === 0 && (
+              <span className="text-xs text-muted">
+                Define categories in the Categories card above.
+              </span>
+            )}
           </label>
           <label className="flex flex-col gap-1 text-sm">
             <span className="font-medium">Duration (min)</span>

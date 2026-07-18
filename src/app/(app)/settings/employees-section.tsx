@@ -17,7 +17,8 @@ export interface EmployeeRow {
   isPractitioner: boolean;
   email: string;
   isActive: boolean;
-  role: string | null;
+  /** All roles held by this employee (one row per employee). */
+  roles: string[];
 }
 
 export function EmployeesSection({
@@ -70,10 +71,18 @@ export function EmployeesSection({
               </div>
               <div className="text-xs text-muted">{e.email}</div>
             </div>
-            <div className="flex items-center gap-2 text-xs">
-              {e.role && (
-                <span className="rounded-full bg-primary/10 px-2 py-0.5 text-primary">
-                  {e.role}
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              {e.roles.map((r) => (
+                <span
+                  key={r}
+                  className="rounded-full bg-primary/10 px-2 py-0.5 text-primary"
+                >
+                  {r}
+                </span>
+              ))}
+              {e.isPractitioner && (
+                <span className="rounded-full bg-success/10 px-2 py-0.5 text-success">
+                  practitioner profile
                 </span>
               )}
               {!e.isActive && (

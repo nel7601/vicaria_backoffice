@@ -68,9 +68,25 @@ export async function listServicesWithPrice(organizationId: string) {
   return rows;
 }
 
+export async function listServiceCategories(organizationId: string) {
+  const db = getDb();
+  const { serviceCategories } = await import("@/lib/db/schema");
+  return db
+    .select({
+      id: serviceCategories.id,
+      name: serviceCategories.name,
+      nameEs: serviceCategories.nameEs,
+      isActive: serviceCategories.isActive,
+    })
+    .from(serviceCategories)
+    .where(eq(serviceCategories.organizationId, organizationId))
+    .orderBy(serviceCategories.name);
+}
+
+/** One row per employee, with all of their roles aggregated. */
 export async function listEmployees(organizationId: string) {
   const db = getDb();
-  return db
+  const rows = await db
     .select({
       id: employees.id,
       firstName: employees.firstName,
@@ -85,4 +101,18 @@ export async function listEmployees(organizationId: string) {
     .innerJoin(users, eq(users.id, employees.userId))
     .leftJoin(userRoles, eq(userRoles.userId, users.id))
     .where(eq(employees.organizationId, organizationId));
+
+  const byId = new Map<
+    string,
+    Omit<(typeof rows)[number], "role"> & { roles: string[] }
+  >();
+  for (const { role, ...rest } of rows) {
+    const existing = byId.get(rest.id);
+    if (existing) {
+      if (role && !existing.roles.includes(role)) existing.roles.push(role);
+    } else {
+      byId.set(rest.id, { ...rest, roles: role ? [role] : [] });
+    }
+  }
+  return [...byId.values()];
 }

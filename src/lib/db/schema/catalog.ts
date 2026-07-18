@@ -4,6 +4,7 @@ import {
   pgTable,
   text,
   timestamp,
+  unique,
   uuid,
   varchar,
 } from "drizzle-orm/pg-core";
@@ -15,6 +16,25 @@ import {
 import { organizations } from "./organizations";
 import { patients } from "./patients";
 import { users } from "./users";
+
+/**
+ * service_categories — controlled category list for services (filters and
+ * reports work on a consistent vocabulary instead of free text).
+ */
+export const serviceCategories = pgTable(
+  "service_categories",
+  {
+    id: primaryId(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id),
+    name: varchar("name", { length: 80 }).notNull(),
+    nameEs: varchar("name_es", { length: 80 }),
+    isActive: boolean("is_active").notNull().default(true),
+    ...timestamps,
+  },
+  (t) => [unique("uq_service_category").on(t.organizationId, t.name)],
+);
 
 /**
  * services — bilingual service catalog (§FR-SVC-001).
