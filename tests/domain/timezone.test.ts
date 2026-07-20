@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   clinicDateString,
   clinicDayWindow,
+  clinicMonthWindow,
+  monthGridDays,
   shiftDay,
+  shiftMonth,
   zonedMidnightUtc,
 } from "@/lib/domain/timezone";
 
@@ -39,5 +42,36 @@ describe("clinic timezone day windows (A-05 America/Toronto)", () => {
   it("shifts day strings across month boundaries", () => {
     expect(shiftDay("2026-07-31", 1)).toBe("2026-08-01");
     expect(shiftDay("2026-08-01", -1)).toBe("2026-07-31");
+  });
+});
+
+describe("month grid helpers", () => {
+  it("shifts months across year boundaries", () => {
+    expect(shiftMonth("2026-12", 1)).toBe("2027-01");
+    expect(shiftMonth("2026-01", -1)).toBe("2025-12");
+  });
+
+  it("builds a month window in the clinic timezone", () => {
+    const { from, to } = clinicMonthWindow("2026-07");
+    expect(from.toISOString()).toBe("2026-07-01T04:00:00.000Z"); // EDT
+    expect(to.toISOString()).toBe("2026-08-01T04:00:00.000Z");
+  });
+
+  it("builds a Sunday-start grid covering the whole month", () => {
+    // July 2026: the 1st is a Wednesday (dow 3), the 31st a Friday (dow 5).
+    const days = monthGridDays("2026-07");
+    expect(days[0]).toBe("2026-06-28"); // Sunday before the 1st
+    expect(days[days.length - 1]).toBe("2026-08-01"); // Saturday after the 31st
+    expect(days.length % 7).toBe(0);
+    expect(days).toContain("2026-07-01");
+    expect(days).toContain("2026-07-31");
+  });
+
+  it("returns exactly 4 weeks for a Feb starting on Sunday", () => {
+    // February 2026 starts Sunday and has 28 days → perfect 4-week grid.
+    const days = monthGridDays("2026-02");
+    expect(days[0]).toBe("2026-02-01");
+    expect(days[days.length - 1]).toBe("2026-02-28");
+    expect(days.length).toBe(28);
   });
 });

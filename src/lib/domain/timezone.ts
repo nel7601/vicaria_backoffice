@@ -84,3 +84,43 @@ export function shiftDay(dayStr: string, days: number): string {
   const dt = new Date(Date.UTC(y, mo - 1, d + days, 12));
   return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, "0")}-${String(dt.getUTCDate()).padStart(2, "0")}`;
 }
+
+/** YYYY-MM of an instant in the clinic timezone. */
+export function clinicMonthString(
+  instant: Date,
+  timeZone: string = CLINIC_TZ,
+): string {
+  return clinicDateString(instant, timeZone).slice(0, 7);
+}
+
+/** Shift a YYYY-MM string by n months. */
+export function shiftMonth(monthStr: string, months: number): string {
+  const [y, m] = monthStr.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1 + months, 15));
+  return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+/** [start, end) UTC window covering one clinic-timezone calendar month. */
+export function clinicMonthWindow(
+  monthStr: string,
+  timeZone: string = CLINIC_TZ,
+): { from: Date; to: Date } {
+  const from = zonedMidnightUtc(`${monthStr}-01`, timeZone);
+  const to = zonedMidnightUtc(`${shiftMonth(monthStr, 1)}-01`, timeZone);
+  return { from, to };
+}
+
+/**
+ * Day strings for a Sunday-start month grid: from the Sunday on/before the 1st
+ * to the Saturday on/after the last day (pure calendar math, 35 or 42 cells).
+ */
+export function monthGridDays(monthStr: string): string[] {
+  const [y, m] = monthStr.split("-").map(Number);
+  const firstDow = new Date(Date.UTC(y, m - 1, 1)).getUTCDay();
+  const daysInMonth = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const lastDow = new Date(Date.UTC(y, m - 1, daysInMonth)).getUTCDay();
+
+  const start = shiftDay(`${monthStr}-01`, -firstDow);
+  const total = firstDow + daysInMonth + (6 - lastDow);
+  return Array.from({ length: total }, (_, i) => shiftDay(start, i));
+}
