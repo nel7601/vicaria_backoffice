@@ -6,9 +6,14 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { employeeSchema, type EmployeeInput } from "@/lib/schemas/settings";
 import { ROLES } from "@/lib/auth/rbac";
-import { createEmployeeAction, updateEmployeeAction } from "./actions";
+import {
+  createEmployeeAction,
+  deleteEmployeeAction,
+  updateEmployeeAction,
+} from "./actions";
 import { Button } from "@/components/ui/button";
 import { Field, Input, inputClass } from "@/components/ui/field";
+import { deleteBtnClass, editBtnClass } from "./services-section";
 
 export interface EmployeeRow {
   id: string;
@@ -42,6 +47,7 @@ export function EmployeesSection({
     roles: [] as string[],
   });
   const [editError, setEditError] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   function openEdit(e: EmployeeRow) {
     setEdit({
@@ -76,6 +82,21 @@ export function EmployeesSection({
       } else {
         setEditError(res.error ?? "Could not save employee.");
       }
+    });
+  }
+
+  function remove(e: EmployeeRow) {
+    if (
+      !window.confirm(
+        `Delete employee "${e.firstName} ${e.lastName}"? If they have any history (appointments, notes, payments…), they can only be deactivated.`,
+      )
+    )
+      return;
+    setDeleteError(null);
+    startTransition(async () => {
+      const res = await deleteEmployeeAction(e.id);
+      if (res.ok) router.refresh();
+      else setDeleteError(res.error ?? "Could not delete employee.");
     });
   }
 
@@ -139,17 +160,27 @@ export function EmployeesSection({
                 </span>
               )}
               {canEdit && (
-                <button
-                  onClick={() => openEdit(e)}
-                  className="text-primary underline-offset-2 hover:underline"
-                >
-                  Edit
-                </button>
+                <span className="flex gap-1.5">
+                  <button onClick={() => openEdit(e)} className={editBtnClass}>
+                    Edit
+                  </button>
+                  <button
+                    onClick={() => remove(e)}
+                    disabled={pending}
+                    className={deleteBtnClass}
+                  >
+                    Delete
+                  </button>
+                </span>
               )}
             </div>
           </li>
         ))}
       </ul>
+
+      {deleteError && !editingId && (
+        <p className="text-sm text-danger">{deleteError}</p>
+      )}
 
       {canEdit && editingId && (
         <div className="grid grid-cols-1 gap-3 rounded-md border border-border p-4 sm:grid-cols-2">

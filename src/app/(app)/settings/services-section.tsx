@@ -5,7 +5,16 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { inputClass } from "@/components/ui/field";
 import { formatCents } from "@/lib/domain/money";
-import { createServiceAction, updateServiceAction } from "./actions";
+import {
+  createServiceAction,
+  deleteServiceAction,
+  updateServiceAction,
+} from "./actions";
+
+export const editBtnClass =
+  "rounded-md border border-border px-2.5 py-1 text-xs font-medium hover:bg-background";
+export const deleteBtnClass =
+  "rounded-md border border-danger/40 px-2.5 py-1 text-xs font-medium text-danger hover:bg-danger/10";
 
 export interface ServiceRow {
   id: string;
@@ -83,6 +92,21 @@ export function ServicesSection({
     setForm((f) => ({ ...f, [key]: value }));
   }
 
+  function remove(s: ServiceRow) {
+    if (
+      !window.confirm(
+        `Delete service "${s.nameEn}"? If it was ever used, it can only be archived.`,
+      )
+    )
+      return;
+    setError(null);
+    startTransition(async () => {
+      const res = await deleteServiceAction(s.id);
+      if (res.ok) router.refresh();
+      else setError(res.error ?? "Could not delete service.");
+    });
+  }
+
   function submit() {
     setError(null);
     const payload = {
@@ -156,12 +180,18 @@ export function ServicesSection({
                 </td>
                 {canEdit && (
                   <td className="py-2 text-right">
-                    <button
-                      onClick={() => openEdit(s)}
-                      className="text-xs text-primary hover:underline"
-                    >
-                      Edit
-                    </button>
+                    <div className="flex justify-end gap-1.5">
+                      <button onClick={() => openEdit(s)} className={editBtnClass}>
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => remove(s)}
+                        disabled={pending}
+                        className={deleteBtnClass}
+                      >
+                        Delete
+                      </button>
+                    </div>
                   </td>
                 )}
               </tr>
@@ -169,6 +199,10 @@ export function ServicesSection({
           </tbody>
         </table>
       </div>
+
+      {error && editing === null && (
+        <p className="text-sm text-danger">{error}</p>
+      )}
 
       {canEdit && editing === null && (
         <Button variant="secondary" onClick={openNew}>

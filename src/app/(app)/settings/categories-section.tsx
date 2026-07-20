@@ -4,7 +4,12 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { inputClass } from "@/components/ui/field";
-import { createCategoryAction, updateCategoryAction } from "./actions";
+import {
+  createCategoryAction,
+  deleteCategoryAction,
+  updateCategoryAction,
+} from "./actions";
+import { deleteBtnClass, editBtnClass } from "./services-section";
 
 export interface CategoryRow {
   id: string;
@@ -60,6 +65,21 @@ export function CategoriesSection({
     });
   }
 
+  function remove(c: CategoryRow) {
+    if (
+      !window.confirm(
+        `Delete category "${c.name}"? If any service uses it, it can only be archived.`,
+      )
+    )
+      return;
+    setError(null);
+    startTransition(async () => {
+      const res = await deleteCategoryAction(c.id);
+      if (res.ok) router.refresh();
+      else setError(res.error ?? "Could not delete category.");
+    });
+  }
+
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted">
@@ -73,26 +93,40 @@ export function CategoriesSection({
         {categories.map((c) => (
           <span
             key={c.id}
-            className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-sm ${
-              c.isActive
-                ? "bg-primary/10 text-primary"
-                : "bg-border text-muted line-through"
+            className={`inline-flex items-center gap-2 rounded-md border border-border px-3 py-1.5 text-sm ${
+              c.isActive ? "" : "opacity-60"
             }`}
           >
-            {c.name}
-            {c.nameEs ? <span className="opacity-60"> · {c.nameEs}</span> : null}
+            <span className={c.isActive ? "text-primary" : "text-muted line-through"}>
+              {c.name}
+              {c.nameEs ? <span className="opacity-60"> · {c.nameEs}</span> : null}
+            </span>
             {canEdit && (
-              <button
-                onClick={() => openEdit(c)}
-                className="ml-1 text-xs underline-offset-2 hover:underline"
-                aria-label={`Edit ${c.name}`}
-              >
-                edit
-              </button>
+              <span className="flex gap-1">
+                <button
+                  onClick={() => openEdit(c)}
+                  className={editBtnClass}
+                  aria-label={`Edit ${c.name}`}
+                >
+                  Edit
+                </button>
+                <button
+                  onClick={() => remove(c)}
+                  disabled={pending}
+                  className={deleteBtnClass}
+                  aria-label={`Delete ${c.name}`}
+                >
+                  Delete
+                </button>
+              </span>
             )}
           </span>
         ))}
       </div>
+
+      {error && editing === null && (
+        <p className="text-sm text-danger">{error}</p>
+      )}
 
       {canEdit && editing === null && (
         <Button variant="secondary" onClick={openNew}>

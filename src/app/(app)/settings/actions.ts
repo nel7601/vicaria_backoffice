@@ -6,8 +6,11 @@ import { authorize } from "@/lib/auth/authorize";
 import { recordAudit } from "@/lib/audit/record";
 import { getDb } from "@/lib/db";
 import {
+  appointments,
   companySettings,
   employees,
+  encounters,
+  invoiceItems,
   locations,
   organizations,
   serviceCategories,
@@ -490,6 +493,186 @@ export async function updateEmployeeAction(
     before: { roles: previousRoles, isActive: target?.isActive },
     after: { roles: data.roles, isActive: data.isActive },
     reason: rolesChanged ? "Roles updated via Settings" : undefined,
+  });
+
+  revalidatePath("/settings");
+  return { ok: true };
+}
+
+function isFkViolation(e: unknown): boolean {
+  return (
+    e instanceof Error &&
+    ("code" in e && (e as { code?: string }).code === "23503") ===
+      true
+  ) || (e instanceof Error && e.message.includes("violates foreign key"));
+}
+
+const IN_USE_MSG =
+  "It has already been used elsewhere, so it cannot be deleted — archive it instead (set it inactive).";
+
+async function countUsage(
+  checks: Promise<{ n: number }[]>[],
+): Promise<number> {
+  const results = await Promise.all(checks);
+  return results.reduce((sum, r) => sum + (r[0]?.n ?? 0), 0);
+}
+
+/** Delete an unused service; refuses when referenced (archive instead). */
+export async function deleteServiceAction(serviceId: string): Promise<ActionResult> {
+  const user = await authorize("configuration", "delete");
+  const org = await getPrimaryOrganization();
+  if (!org) return { ok: false, error: "Organization not found." };
+
+  const db = getDb();
+  const { count } = await import("drizzle-orm");
+  const used = await countUsage([
+    db.select({ n: count() }).from(appointments).where(eq(appointments.serviceId, serviceId)),
+    db.select({ n: count() }).from(encounters).where(eq(encounters.serviceId, serviceId)),
+    db.select({ n: count() }).from(invoiceItems).where(eq(invoiceItems.serviceId, serviceId)),
+  ]);
+  if (used > 0) return { ok: false, error: IN_USE_MSG };
+
+  try {
+    await db.transaction(async (tx) => {
+      await tx.delete(servicePrices).where(eq(servicePrices.serviceId, serviceId));
+      await tx
+        .delete(services)
+        .where(and(eq(services.organizationId, org.id), eq(services.id, serviceId)));
+    });
+  } catch (e) {
+    if (isFkViolation(e)) return { ok: false, error: IN_USE_MSG };
+    return { ok: false, error: "Could not delete service." };
+  }
+
+  await recordAudit({
+    organizationId: org.id,
+    actorUserId: user.authId,
+    action: "delete",
+    entityType: "service",
+    entityId: serviceId,
+    reason: "Deleted unused service via Settings",
+  });
+
+  revalidatePath("/settings");
+  revalidatePath("/calendar");
+  return { ok: true };
+}
+
+/** Delete an unused category; refuses when any service uses it. */
+export async function deleteCategoryAction(categoryId: string): Promise<ActionResult> {
+  const user = await authorize("configuration", "delete");
+  const org = await getPrimaryOrganization();
+  if (!org) return { ok: false, error: "Organization not found." };
+
+  const db = getDb();
+  const [cat] = await db
+    .select()
+    .from(serviceCategories)
+    .where(
+      and(
+        eq(serviceCategories.organizationId, org.id),
+        eq(serviceCategories.id, categoryId),
+      ),
+    )
+    .limit(1);
+  if (!cat) return { ok: false, error: "Category not found." };
+
+  const { count } = await import("drizzle-orm");
+  const used = await countUsage([
+    db
+      .select({ n: count() })
+      .from(services)
+      .where(
+        and(eq(services.organizationId, org.id), eq(services.category, cat.name)),
+      ),
+  ]);
+  if (used > 0) return { ok: false, error: IN_USE_MSG };
+
+  await db.delete(serviceCategories).where(eq(serviceCategories.id, categoryId));
+
+  await recordAudit({
+    organizationId: org.id,
+    actorUserId: user.authId,
+    action: "delete",
+    entityType: "service_category",
+    entityId: categoryId,
+    before: { name: cat.name },
+    reason: "Deleted unused category via Settings",
+  });
+
+  revalidatePath("/settings");
+  return { ok: true };
+}
+
+/**
+ * Delete an employee with no history. Any reference (appointments, encounters,
+ * payments, audit trail…) blocks deletion — deactivate instead. Relies on FK
+ * integrity as the final guard.
+ */
+export async function deleteEmployeeAction(employeeId: string): Promise<ActionResult> {
+  const user = await authorize("users_roles", "delete");
+  const org = await getPrimaryOrganization();
+  if (!org) return { ok: false, error: "Organization not found." };
+
+  const db = getDb();
+  const [emp] = await db
+    .select({ id: employees.id, userId: employees.userId })
+    .from(employees)
+    .where(and(eq(employees.organizationId, org.id), eq(employees.id, employeeId)))
+    .limit(1);
+  if (!emp) return { ok: false, error: "Employee not found." };
+
+  const [target] = await db
+    .select({ authUserId: users.authUserId, email: users.email })
+    .from(users)
+    .where(eq(users.id, emp.userId))
+    .limit(1);
+
+  // Quick explicit checks for the common references (nicer error than FK).
+  const { count } = await import("drizzle-orm");
+  const { patients: patientsTable } = await import("@/lib/db/schema");
+  const used = await countUsage([
+    db.select({ n: count() }).from(appointments).where(eq(appointments.employeeId, employeeId)),
+    db.select({ n: count() }).from(encounters).where(eq(encounters.practitionerId, employeeId)),
+    db
+      .select({ n: count() })
+      .from(patientsTable)
+      .where(eq(patientsTable.primaryPractitionerId, employeeId)),
+  ]);
+  if (used > 0) return { ok: false, error: IN_USE_MSG };
+
+  try {
+    await db.transaction(async (tx) => {
+      await tx.delete(userRoles).where(eq(userRoles.userId, emp.userId));
+      await tx.delete(employees).where(eq(employees.id, employeeId));
+      // Audit/access logs and *_by columns reference users.id; if any exist
+      // the FK violation below rejects the whole transaction.
+      await tx.delete(users).where(eq(users.id, emp.userId));
+    });
+  } catch (e) {
+    if (isFkViolation(e)) return { ok: false, error: IN_USE_MSG };
+    return { ok: false, error: "Could not delete employee." };
+  }
+
+  // Best-effort: remove the linked auth account too.
+  if (target?.authUserId) {
+    try {
+      const { createAdminClient } = await import("@/lib/supabase/admin");
+      const admin = createAdminClient();
+      await admin.auth.admin.deleteUser(target.authUserId);
+    } catch (e) {
+      console.error("Auth account delete failed:", e);
+    }
+  }
+
+  await recordAudit({
+    organizationId: org.id,
+    actorUserId: user.authId,
+    action: "delete",
+    entityType: "employee",
+    entityId: employeeId,
+    before: { email: target?.email },
+    reason: "Deleted unused employee via Settings",
   });
 
   revalidatePath("/settings");
