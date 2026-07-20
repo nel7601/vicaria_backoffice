@@ -10,6 +10,8 @@ import {
   companySettings,
   employees,
   encounters,
+  encounterTemplates,
+  encounterTemplateVersions,
   invoiceItems,
   locations,
   organizations,
@@ -19,6 +21,7 @@ import {
   userRoles,
   users,
 } from "@/lib/db/schema";
+import { templateSchema } from "@/lib/schemas/template";
 import { getPrimaryOrganization } from "@/lib/db/queries/organization";
 import {
   companySettingsSchema,
@@ -676,6 +679,182 @@ export async function deleteEmployeeAction(employeeId: string): Promise<ActionRe
   });
 
   revalidatePath("/settings");
+  return { ok: true };
+}
+
+/** Create an encounter template with a published v1 (FR-ENC-002). */
+export async function createTemplateAction(raw: unknown): Promise<ActionResult> {
+  const user = await authorize("configuration", "update");
+  const parsed = templateSchema.safeParse(raw);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
+  }
+  const org = await getPrimaryOrganization();
+  if (!org) return { ok: false, error: "Organization not found." };
+
+  const data = parsed.data;
+  const db = getDb();
+  const created = await db.transaction(async (tx) => {
+    const [tpl] = await tx
+      .insert(encounterTemplates)
+      .values({
+        organizationId: org.id,
+        name: data.name,
+        serviceId: data.serviceId || null,
+      })
+      .returning();
+    await tx.insert(encounterTemplateVersions).values({
+      organizationId: org.id,
+      templateId: tpl.id,
+      version: 1,
+      schema: { fields: data.fields },
+      publishedAt: new Date(),
+      publishedBy: user.dbUserId,
+    });
+    return tpl;
+  });
+
+  await recordAudit({
+    organizationId: org.id,
+    actorUserId: user.authId,
+    action: "create",
+    entityType: "encounter_template",
+    entityId: created.id,
+    after: { name: data.name, fields: data.fields.length },
+  });
+
+  revalidatePath("/settings");
+  revalidatePath("/encounters");
+  return { ok: true };
+}
+
+/**
+ * Edit a template by publishing a NEW version (FR-ENC-002: a published
+ * version never changes retroactively — existing encounters keep theirs).
+ */
+export async function publishTemplateVersionAction(
+  templateId: string,
+  raw: unknown,
+): Promise<ActionResult> {
+  const user = await authorize("configuration", "update");
+  const parsed = templateSchema.safeParse(raw);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
+  }
+  const org = await getPrimaryOrganization();
+  if (!org) return { ok: false, error: "Organization not found." };
+
+  const data = parsed.data;
+  const db = getDb();
+
+  const [tpl] = await db
+    .select()
+    .from(encounterTemplates)
+    .where(
+      and(
+        eq(encounterTemplates.organizationId, org.id),
+        eq(encounterTemplates.id, templateId),
+      ),
+    )
+    .limit(1);
+  if (!tpl) return { ok: false, error: "Template not found." };
+
+  const { desc } = await import("drizzle-orm");
+  const [latest] = await db
+    .select({ version: encounterTemplateVersions.version })
+    .from(encounterTemplateVersions)
+    .where(eq(encounterTemplateVersions.templateId, templateId))
+    .orderBy(desc(encounterTemplateVersions.version))
+    .limit(1);
+  const nextVersion = (latest?.version ?? 0) + 1;
+
+  await db.transaction(async (tx) => {
+    await tx
+      .update(encounterTemplates)
+      .set({
+        name: data.name,
+        serviceId: data.serviceId || null,
+        updatedAt: new Date(),
+      })
+      .where(eq(encounterTemplates.id, templateId));
+    await tx.insert(encounterTemplateVersions).values({
+      organizationId: org.id,
+      templateId,
+      version: nextVersion,
+      schema: { fields: data.fields },
+      publishedAt: new Date(),
+      publishedBy: user.dbUserId,
+    });
+  });
+
+  await recordAudit({
+    organizationId: org.id,
+    actorUserId: user.authId,
+    action: "update",
+    entityType: "encounter_template",
+    entityId: templateId,
+    after: { name: data.name, version: nextVersion },
+  });
+
+  revalidatePath("/settings");
+  revalidatePath("/encounters");
+  return { ok: true };
+}
+
+/** Delete a template only when no encounter ever used any of its versions. */
+export async function deleteTemplateAction(templateId: string): Promise<ActionResult> {
+  const user = await authorize("configuration", "delete");
+  const org = await getPrimaryOrganization();
+  if (!org) return { ok: false, error: "Organization not found." };
+
+  const db = getDb();
+  const { count, inArray } = await import("drizzle-orm");
+
+  const versionIds = (
+    await db
+      .select({ id: encounterTemplateVersions.id })
+      .from(encounterTemplateVersions)
+      .where(eq(encounterTemplateVersions.templateId, templateId))
+  ).map((v) => v.id);
+
+  if (versionIds.length > 0) {
+    const [{ n }] = await db
+      .select({ n: count() })
+      .from(encounters)
+      .where(inArray(encounters.templateVersionId, versionIds));
+    if ((n ?? 0) > 0) return { ok: false, error: IN_USE_MSG };
+  }
+
+  try {
+    await db.transaction(async (tx) => {
+      await tx
+        .delete(encounterTemplateVersions)
+        .where(eq(encounterTemplateVersions.templateId, templateId));
+      await tx
+        .delete(encounterTemplates)
+        .where(
+          and(
+            eq(encounterTemplates.organizationId, org.id),
+            eq(encounterTemplates.id, templateId),
+          ),
+        );
+    });
+  } catch (e) {
+    if (isFkViolation(e)) return { ok: false, error: IN_USE_MSG };
+    return { ok: false, error: "Could not delete template." };
+  }
+
+  await recordAudit({
+    organizationId: org.id,
+    actorUserId: user.authId,
+    action: "delete",
+    entityType: "encounter_template",
+    entityId: templateId,
+    reason: "Deleted unused template via Settings",
+  });
+
+  revalidatePath("/settings");
+  revalidatePath("/encounters");
   return { ok: true };
 }
 

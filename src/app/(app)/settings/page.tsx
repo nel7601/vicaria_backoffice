@@ -8,10 +8,22 @@ import {
   listServiceCategories,
   listServicesWithPrice,
 } from "@/lib/db/queries/organization";
+import { listTemplatesDetailed } from "@/lib/db/queries/encounters";
+import type { TemplateFieldInput } from "@/lib/schemas/template";
 import { CompanyForm } from "./company-form";
 import { EmployeesSection, type EmployeeRow } from "./employees-section";
 import { ServicesSection, type ServiceRow } from "./services-section";
 import { CategoriesSection, type CategoryRow } from "./categories-section";
+import { TemplatesSection, type TemplateRow } from "./templates-section";
+
+function extractFields(schema: unknown): TemplateFieldInput[] {
+  if (Array.isArray(schema)) return schema as TemplateFieldInput[];
+  if (schema && typeof schema === "object" && "fields" in schema) {
+    const f = (schema as { fields?: unknown }).fields;
+    if (Array.isArray(f)) return f as TemplateFieldInput[];
+  }
+  return [];
+}
 
 /**
  * Settings (spec §7, Phase 1). Company + locations + employees/roles.
@@ -42,6 +54,7 @@ export default async function SettingsPage() {
   let employees: EmployeeRow[] = [];
   let services: ServiceRow[] = [];
   let categories: CategoryRow[] = [];
+  let templates: TemplateRow[] = [];
 
   try {
     const org = await getPrimaryOrganization();
@@ -63,6 +76,15 @@ export default async function SettingsPage() {
       employees = (await listEmployees(org.id)) as EmployeeRow[];
       services = (await listServicesWithPrice(org.id)) as ServiceRow[];
       categories = (await listServiceCategories(org.id)) as CategoryRow[];
+      templates = (await listTemplatesDetailed(org.id)).map((t) => ({
+        templateId: t.templateId,
+        name: t.name,
+        serviceId: t.serviceId,
+        serviceName: t.serviceName,
+        version: t.version,
+        fields: extractFields(t.schema),
+        usageCount: t.usageCount ?? 0,
+      }));
     }
   } catch (e) {
     dbError =
@@ -105,6 +127,19 @@ export default async function SettingsPage() {
           <ServicesSection
             services={services}
             categories={categories.map((c) => c.name)}
+            canEdit={canEditCompany}
+          />
+        </div>
+      </Card>
+
+      <Card>
+        <CardTitle>Encounter templates</CardTitle>
+        <div className="mt-4">
+          <TemplatesSection
+            templates={templates}
+            services={services
+              .filter((s) => s.isActive)
+              .map((s) => ({ id: s.id, label: s.nameEn }))}
             canEdit={canEditCompany}
           />
         </div>

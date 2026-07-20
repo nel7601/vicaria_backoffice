@@ -85,6 +85,16 @@ export async function startEncounterFromAppointmentAction(
     .limit(1);
   if (existing) return { ok: true, encounterId: existing.id };
 
+  // FR-ENC-002: auto-attach the template linked to the appointment's service
+  // (or the org's only template when just one exists).
+  const { resolveTemplateVersionForService } = await import(
+    "@/lib/db/queries/encounters"
+  );
+  const templateVersionId = await resolveTemplateVersionForService(
+    org.id,
+    appt.serviceId,
+  );
+
   const [created] = await db
     .insert(encounters)
     .values({
@@ -94,6 +104,7 @@ export async function startEncounterFromAppointmentAction(
       serviceId: appt.serviceId,
       appointmentId: appt.id,
       modality: appt.modality,
+      templateVersionId,
       status: "draft",
       startedAt: new Date(),
       contentSnapshot: {},

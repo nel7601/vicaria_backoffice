@@ -97,3 +97,63 @@ export async function listTemplates(organizationId: string) {
     )
     .where(eq(encounterTemplates.organizationId, organizationId));
 }
+
+/**
+ * Latest published version per template, with linked service and usage count.
+ * Backs the Settings → Templates manager.
+ */
+export async function listTemplatesDetailed(organizationId: string) {
+  const db = getDb();
+  const { services } = await import("@/lib/db/schema");
+  const { desc, sql } = await import("drizzle-orm");
+
+  const rows = await db
+    .select({
+      templateId: encounterTemplates.id,
+      name: encounterTemplates.name,
+      serviceId: encounterTemplates.serviceId,
+      serviceName: services.nameEn,
+      versionId: encounterTemplateVersions.id,
+      version: encounterTemplateVersions.version,
+      schema: encounterTemplateVersions.schema,
+      usageCount: sql<number>`(
+        select count(*)::int from encounters e
+        join encounter_template_versions v2 on v2.id = e.template_version_id
+        where v2.template_id = ${encounterTemplates.id}
+      )`,
+    })
+    .from(encounterTemplates)
+    .leftJoin(services, eq(services.id, encounterTemplates.serviceId))
+    .leftJoin(
+      encounterTemplateVersions,
+      eq(encounterTemplateVersions.templateId, encounterTemplates.id),
+    )
+    .where(eq(encounterTemplates.organizationId, organizationId))
+    .orderBy(desc(encounterTemplateVersions.version));
+
+  // Keep only the highest version per template.
+  const seen = new Map<string, (typeof rows)[number]>();
+  for (const r of rows) {
+    if (!seen.has(r.templateId)) seen.set(r.templateId, r);
+  }
+  return [...seen.values()];
+}
+
+/**
+ * Resolve the template version to auto-attach when starting an encounter
+ * (FR-ENC-002): the service-linked template's latest published version, or —
+ * when the org has exactly one template — that one. Null otherwise.
+ */
+export async function resolveTemplateVersionForService(
+  organizationId: string,
+  serviceId: string | null,
+): Promise<string | null> {
+  const detailed = await listTemplatesDetailed(organizationId);
+  const withVersion = detailed.filter((t) => t.versionId);
+  if (serviceId) {
+    const match = withVersion.find((t) => t.serviceId === serviceId);
+    if (match) return match.versionId;
+  }
+  if (withVersion.length === 1) return withVersion[0].versionId;
+  return null;
+}
