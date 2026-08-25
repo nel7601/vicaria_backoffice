@@ -449,6 +449,7 @@ export async function updateEmployeeAction(
         lastName: data.lastName,
         title: blankToNull(data.title),
         isPractitioner: data.isPractitioner,
+        isCaregiver: data.isCaregiver,
         updatedAt: new Date(),
       })
       .where(eq(employees.id, employeeId));
@@ -891,6 +892,7 @@ export async function createEmployeeAction(raw: unknown): Promise<ActionResult> 
         lastName: data.lastName,
         title: blankToNull(data.title),
         isPractitioner: data.isPractitioner,
+        isCaregiver: data.isCaregiver,
       })
       .returning();
     await tx.insert(userRoles).values({

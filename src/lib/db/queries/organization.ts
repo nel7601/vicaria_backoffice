@@ -93,6 +93,7 @@ export async function listEmployees(organizationId: string) {
       lastName: employees.lastName,
       title: employees.title,
       isPractitioner: employees.isPractitioner,
+      isCaregiver: employees.isCaregiver,
       email: users.email,
       isActive: users.isActive,
       role: userRoles.role,

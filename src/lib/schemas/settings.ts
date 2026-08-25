@@ -75,6 +75,7 @@ export const updateEmployeeSchema = z.object({
   lastName: z.string().trim().min(1, "Required").max(120),
   title: z.string().trim().max(120).optional().or(z.literal("")),
   isPractitioner: z.boolean(),
+  isCaregiver: z.boolean(),
   isActive: z.boolean(),
   roles: z.array(roleEnum),
 });
@@ -87,6 +88,7 @@ export const employeeSchema = z.object({
   lastName: z.string().trim().min(1, "Required").max(120),
   title: z.string().trim().max(120).optional().or(z.literal("")),
   isPractitioner: z.boolean(),
+  isCaregiver: z.boolean(),
   role: z.enum([
     "owner",
     "administrator",

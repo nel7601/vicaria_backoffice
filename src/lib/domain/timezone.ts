@@ -110,6 +110,26 @@ export function clinicMonthWindow(
   return { from, to };
 }
 
+/** Sunday (YYYY-MM-DD) of the week containing dayStr (pure calendar math). */
+export function weekStartDay(dayStr: string): string {
+  const [y, m, d] = dayStr.split("-").map(Number);
+  const dow = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+  return shiftDay(dayStr, -dow);
+}
+
+/** [start, end) UTC window covering the clinic-timezone week of dayStr. */
+export function clinicWeekWindow(
+  dayStr: string,
+  timeZone: string = CLINIC_TZ,
+): { from: Date; to: Date; weekStart: string } {
+  const weekStart = weekStartDay(dayStr);
+  return {
+    from: zonedMidnightUtc(weekStart, timeZone),
+    to: zonedMidnightUtc(shiftDay(weekStart, 7), timeZone),
+    weekStart,
+  };
+}
+
 /**
  * Day strings for a Sunday-start month grid: from the Sunday on/before the 1st
  * to the Saturday on/after the last day (pure calendar math, 35 or 42 cells).

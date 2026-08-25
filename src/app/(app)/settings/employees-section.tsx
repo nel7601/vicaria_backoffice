@@ -21,6 +21,7 @@ export interface EmployeeRow {
   lastName: string;
   title: string | null;
   isPractitioner: boolean;
+  isCaregiver: boolean;
   email: string;
   isActive: boolean;
   /** All roles held by this employee (one row per employee). */
@@ -43,6 +44,7 @@ export function EmployeesSection({
     lastName: "",
     title: "",
     isPractitioner: false,
+    isCaregiver: false,
     isActive: true,
     roles: [] as string[],
   });
@@ -55,6 +57,7 @@ export function EmployeesSection({
       lastName: e.lastName,
       title: e.title ?? "",
       isPractitioner: e.isPractitioner,
+      isCaregiver: e.isCaregiver,
       isActive: e.isActive,
       roles: [...e.roles],
     });
@@ -107,7 +110,7 @@ export function EmployeesSection({
     formState: { errors },
   } = useForm<EmployeeInput>({
     resolver: zodResolver(employeeSchema),
-    defaultValues: { role: "reception", isPractitioner: false },
+    defaultValues: { role: "reception", isPractitioner: false, isCaregiver: false },
   });
 
   function onSubmit(values: EmployeeInput) {
@@ -115,7 +118,7 @@ export function EmployeesSection({
     startTransition(async () => {
       const res = await createEmployeeAction(values);
       if (res.ok) {
-        reset({ role: "reception", isPractitioner: false });
+        reset({ role: "reception", isPractitioner: false, isCaregiver: false });
         setMessage("Employee created.");
       } else {
         setMessage(res.error ?? "Failed.");
@@ -152,6 +155,11 @@ export function EmployeesSection({
               {e.isPractitioner && (
                 <span className="rounded-full bg-success/10 px-2 py-0.5 text-success">
                   practitioner profile
+                </span>
+              )}
+              {e.isCaregiver && (
+                <span className="rounded-full bg-primary-soft px-2 py-0.5 text-primary-hover">
+                  caregiver
                 </span>
               )}
               {!e.isActive && (
@@ -219,6 +227,16 @@ export function EmployeesSection({
                 }
               />
               Practitioner
+            </label>
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={edit.isCaregiver}
+                onChange={(e) =>
+                  setEdit((s) => ({ ...s, isCaregiver: e.target.checked }))
+                }
+              />
+              Caregiver
             </label>
             <label className="flex items-center gap-2">
               <input
@@ -295,6 +313,10 @@ export function EmployeesSection({
             <label className="flex items-center gap-2 text-sm">
               <input type="checkbox" {...register("isPractitioner")} />
               Is practitioner
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" {...register("isCaregiver")} />
+              Is caregiver (home care)
             </label>
           </div>
           <div className="sm:col-span-2">

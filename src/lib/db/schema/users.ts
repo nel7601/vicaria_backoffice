@@ -45,6 +45,8 @@ export const employees = pgTable("employees", {
   signatureStoragePath: text("signature_storage_path"),
   languages: jsonb("languages").notNull().default(["en"]),
   isPractitioner: boolean("is_practitioner").notNull().default(false),
+  /** Eligible to be assigned home-care shifts (Vicaria Care). */
+  isCaregiver: boolean("is_caregiver").notNull().default(false),
   ...timestamps,
 });
 

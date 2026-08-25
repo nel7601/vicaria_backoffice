@@ -23,6 +23,7 @@ export type Role = (typeof ROLES)[number];
 export const RESOURCES = [
   "patients_demographic",
   "clinical_notes",
+  "home_care",
   "invoices_payments",
   "clinical_reports",
   "marketing_reports",
@@ -74,6 +75,7 @@ const MATRIX: Record<Role, Partial<Record<Resource, Access>>> = {
   owner: {
     patients_demographic: { create: true, read: "all", update: true, delete: true },
     clinical_notes: { create: false, read: "all", update: false, delete: false },
+    home_care: { create: true, read: "all", update: true, delete: true },
     invoices_payments: { create: true, read: "all", update: true, delete: true },
     clinical_reports: { create: false, read: "all", update: false, delete: false },
     marketing_reports: { create: false, read: "all", update: false, delete: false },
@@ -84,6 +86,7 @@ const MATRIX: Record<Role, Partial<Record<Resource, Access>>> = {
   administrator: {
     patients_demographic: { create: true, read: "all", update: true, delete: true },
     clinical_notes: { create: false, read: "all", update: false, delete: false },
+    home_care: { create: true, read: "all", update: true, delete: false },
     invoices_payments: { create: true, read: "all", update: true, delete: true },
     clinical_reports: { create: false, read: "all", update: false, delete: false },
     marketing_reports: { create: false, read: "all", update: false, delete: false },
@@ -94,16 +97,19 @@ const MATRIX: Record<Role, Partial<Record<Resource, Access>>> = {
   practitioner: {
     patients_demographic: { create: false, read: "assigned", update: false, delete: false },
     clinical_notes: { create: true, read: "own", update: "own", delete: false },
+    home_care: { create: false, read: "assigned", update: "own", delete: false },
     invoices_payments: { create: false, read: "limited", update: false, delete: false },
     clinical_reports: { create: false, read: "assigned", update: false, delete: false },
     audit: { create: false, read: "own", update: false, delete: false },
   },
   reception: {
     patients_demographic: { create: true, read: "all", update: true, delete: true },
+    home_care: { create: true, read: "all", update: true, delete: false },
     invoices_payments: { create: true, read: "all", update: false, delete: false },
   },
   billing: {
     patients_demographic: { create: false, read: "all", update: false, delete: false },
+    home_care: { create: false, read: "all", update: false, delete: false },
     invoices_payments: { create: true, read: "all", update: true, delete: true },
     audit: { create: false, read: "finance", update: false, delete: false },
   },
@@ -114,6 +120,7 @@ const MATRIX: Record<Role, Partial<Record<Resource, Access>>> = {
   },
   auditor: {
     patients_demographic: { create: false, read: "all", update: false, delete: false },
+    home_care: { create: false, read: "all", update: false, delete: false },
     clinical_notes: { create: false, read: "audited", update: false, delete: false },
     invoices_payments: { create: false, read: "all", update: false, delete: false },
     clinical_reports: { create: false, read: "all", update: false, delete: false },

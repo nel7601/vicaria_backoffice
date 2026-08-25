@@ -172,3 +172,19 @@ export const skinLesionComplexityEnum = pgEnum("skin_lesion_complexity", [
 ]);
 
 export const bodySideEnum = pgEnum("body_side", ["left", "right", "central", "n_a"]);
+
+export const careAgreementStatusEnum = pgEnum("care_agreement_status", [
+  "draft",
+  "active",
+  "paused",
+  "ended",
+]);
+
+export const careShiftStatusEnum = pgEnum("care_shift_status", [
+  "scheduled",
+  "confirmed",
+  "in_progress",
+  "completed",
+  "cancelled",
+  "no_show",
+]);

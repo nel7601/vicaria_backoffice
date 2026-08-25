@@ -15,6 +15,13 @@
       "when": 1784382219035,
       "tag": "0001_service_categories",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1787689755886,
+      "tag": "0002_home_care",
+      "breakpoints": true
     }
   ]
 }
