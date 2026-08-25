@@ -183,7 +183,7 @@ BEGIN
   INSERT INTO invoice_items (organization_id, invoice_id, description, quantity, unit_price_cents, tax_rate_bps, line_total_cents, service_id)
   VALUES (v_org, v_inv, 'Skin Consultation', 1, 9000, 1300, 10170, v_svc_skin);
   INSERT INTO payments (organization_id, patient_id, method, status, amount_cents, received_at, etransfer_sender_name, etransfer_sender_email, reference)
-  VALUES (v_org, v_p2, 'etransfer', 'pending', 10170, (d + time '08:12') AT TIME ZONE 'America/Toronto', 'Daniel Fournier', 'dan.demo@example.com', 'ET-58201');
+  VALUES (v_org, v_p2, 'e_transfer', 'pending', 10170, (d + time '08:12') AT TIME ZONE 'America/Toronto', 'Daniel Fournier', 'dan.demo@example.com', 'ET-58201');
 
   -- 3) Draft invoice (home-care hours for Rosa, first week)
   INSERT INTO invoices (organization_id, patient_id, status, subtotal_cents, tax_cents, total_cents, paid_cents, balance_cents)
