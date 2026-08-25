@@ -48,15 +48,24 @@ export function Sidebar({ visibleHrefs }: { visibleHrefs: string[] }) {
           <div className="text-xs text-muted">Backoffice</div>
         </div>
       </div>
-      <nav className="flex-1 space-y-4 overflow-y-auto p-3" aria-label="Primary">
+      <nav className="flex-1 space-y-5 overflow-y-auto p-3" aria-label="Primary">
         {groups.map((group, gi) => (
           <div key={group.label ?? `top-${gi}`}>
             {group.label && (
-              <div className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted">
-                {group.label}
+              <div className="mb-1.5 flex items-center gap-2 px-3">
+                <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted/80">
+                  {group.label}
+                </span>
+                <span className="h-px flex-1 bg-border" aria-hidden />
               </div>
             )}
-            <div className="space-y-1">
+            <div
+              className={cn(
+                "space-y-0.5",
+                // Labeled groups get a subtle rail so items read as nested.
+                group.label && "ml-3.5 border-l border-border pl-2",
+              )}
+            >
               {group.items.map((item) => {
                 const active = isActive(item.href);
                 return (
@@ -65,10 +74,10 @@ export function Sidebar({ visibleHrefs }: { visibleHrefs: string[] }) {
                     href={item.href}
                     aria-current={active ? "page" : undefined}
                     className={cn(
-                      "block rounded-lg px-3 py-2 text-sm font-medium transition duration-150",
+                      "block rounded-lg px-3 py-1.5 text-sm transition duration-150",
                       active
-                        ? "bg-primary-soft text-primary-hover"
-                        : "text-foreground hover:bg-warm",
+                        ? "bg-primary-soft font-semibold text-primary-hover"
+                        : "font-normal text-foreground/90 hover:bg-warm hover:text-foreground",
                     )}
                   >
                     {item.label}
