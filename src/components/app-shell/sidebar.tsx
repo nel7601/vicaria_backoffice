@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { NAV_ITEMS } from "./nav";
@@ -12,9 +13,14 @@ export function Sidebar({ visibleHrefs }: { visibleHrefs: string[] }) {
   return (
     <aside className="flex w-60 shrink-0 flex-col border-r border-border bg-surface">
       <div className="flex h-16 items-center gap-2 border-b border-border px-5">
-        <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary text-sm font-bold text-primary-foreground">
-          V
-        </div>
+        <Image
+          src="/brand/vicaria-symbol.png"
+          alt="Vicaria Health"
+          width={30}
+          height={40}
+          className="h-10 w-auto"
+          priority
+        />
         <div className="leading-tight">
           <div
             className="text-sm font-bold"
