@@ -9,18 +9,16 @@ import {
 } from "@/lib/db/queries/appointments";
 import { listPatients } from "@/lib/db/queries/patients";
 import { listActiveServices } from "@/lib/db/queries/catalog";
+import { MonthGrid } from "@/components/ui/month-grid";
 import { NewAppointmentForm } from "./new-appointment-form";
 import { AppointmentRow } from "./appointment-row";
 import {
   clinicDateString,
   clinicDayWindow,
   clinicMonthWindow,
-  monthGridDays,
   shiftDay,
   shiftMonth,
 } from "@/lib/domain/timezone";
-
-const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 const STATUS_DOT: Record<string, string> = {
   scheduled: "bg-primary",
@@ -213,8 +211,8 @@ export default async function CalendarPage({
           <MonthGrid
             monthStr={monthStr}
             todayStr={clinicDateString(new Date())}
-            empQuery={empQuery}
-            appts={appts.map((a) => ({
+            dayHref={(day) => `/calendar?date=${day}${empQuery}`}
+            entries={appts.map((a) => ({
               id: a.id,
               day: clinicDateString(a.startAt),
               time: a.startAt.toLocaleTimeString("en-CA", {
@@ -223,8 +221,9 @@ export default async function CalendarPage({
                 hour12: false,
                 timeZone: "America/Toronto",
               }),
-              patient: `${a.patientFirst} ${a.patientLast}`,
-              status: a.status,
+              label: `${a.patientFirst} ${a.patientLast}`,
+              dotClass: STATUS_DOT[a.status] ?? "bg-muted",
+              struck: ["cancelled", "no_show"].includes(a.status),
             }))}
           />
         )}
@@ -256,100 +255,6 @@ export default async function CalendarPage({
           </ul>
         )}
       </Card>
-    </div>
-  );
-}
-
-interface MonthAppt {
-  id: string;
-  day: string;
-  time: string;
-  patient: string;
-  status: string;
-}
-
-const MAX_CHIPS = 3;
-
-function MonthGrid({
-  monthStr,
-  todayStr,
-  empQuery,
-  appts,
-}: {
-  monthStr: string;
-  todayStr: string;
-  empQuery: string;
-  appts: MonthAppt[];
-}) {
-  const days = monthGridDays(monthStr);
-  const byDay = new Map<string, MonthAppt[]>();
-  for (const a of appts) {
-    const list = byDay.get(a.day);
-    if (list) list.push(a);
-    else byDay.set(a.day, [a]);
-  }
-
-  return (
-    <div className="overflow-x-auto">
-      <div className="min-w-[720px]">
-        <div className="grid grid-cols-7 border-b border-border text-center text-xs font-medium uppercase text-muted">
-          {WEEKDAYS.map((w) => (
-            <div key={w} className="py-2">
-              {w}
-            </div>
-          ))}
-        </div>
-        <div className="grid grid-cols-7">
-          {days.map((day) => {
-            const inMonth = day.startsWith(monthStr);
-            const isToday = day === todayStr;
-            const dayAppts = byDay.get(day) ?? [];
-            const extra = dayAppts.length - MAX_CHIPS;
-            return (
-              <Link
-                key={day}
-                href={`/calendar?date=${day}${empQuery}`}
-                className={`min-h-24 border-b border-r border-border/60 p-1.5 align-top transition hover:bg-background ${
-                  inMonth ? "" : "bg-background/60 text-muted"
-                }`}
-              >
-                <div
-                  className={`mb-1 inline-flex h-6 w-6 items-center justify-center rounded-full text-xs ${
-                    isToday
-                      ? "bg-primary font-semibold text-primary-foreground"
-                      : inMonth
-                        ? "font-medium"
-                        : ""
-                  }`}
-                >
-                  {Number(day.slice(8))}
-                </div>
-                <div className="space-y-0.5">
-                  {dayAppts.slice(0, MAX_CHIPS).map((a) => (
-                    <div
-                      key={a.id}
-                      className={`flex items-center gap-1 truncate rounded bg-primary/5 px-1 py-0.5 text-[11px] leading-tight ${
-                        ["cancelled", "no_show"].includes(a.status)
-                          ? "line-through opacity-50"
-                          : ""
-                      }`}
-                    >
-                      <span
-                        className={`h-1.5 w-1.5 shrink-0 rounded-full ${STATUS_DOT[a.status] ?? "bg-muted"}`}
-                      />
-                      <span className="tabular-nums">{a.time}</span>
-                      <span className="truncate">{a.patient}</span>
-                    </div>
-                  ))}
-                  {extra > 0 && (
-                    <div className="px-1 text-[11px] text-muted">+{extra} more</div>
-                  )}
-                </div>
-              </Link>
-            );
-          })}
-        </div>
-      </div>
     </div>
   );
 }
