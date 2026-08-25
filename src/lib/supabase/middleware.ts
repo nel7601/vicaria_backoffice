@@ -1,7 +1,13 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-const PUBLIC_PATHS = ["/login", "/auth", "/api/webhooks"];
+const PUBLIC_PATHS = [
+  "/login",
+  "/auth",
+  "/api/webhooks",
+  "/forgot-password",
+  "/reset-password",
+];
 
 /**
  * Refreshes the Supabase session on every request and gates private routes.

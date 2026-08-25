@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -11,14 +10,12 @@ import { Button } from "@/components/ui/button";
 
 const schema = z.object({
   email: z.string().email("Enter a valid email"),
-  password: z.string().min(1, "Password is required"),
 });
 
 type FormValues = z.infer<typeof schema>;
 
-export function LoginForm() {
-  const router = useRouter();
-  const params = useSearchParams();
+export function ForgotPasswordForm() {
+  const [sent, setSent] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
 
   const {
@@ -30,13 +27,28 @@ export function LoginForm() {
   async function onSubmit(values: FormValues) {
     setServerError(null);
     const supabase = createClient();
-    const { error } = await supabase.auth.signInWithPassword(values);
+    const { error } = await supabase.auth.resetPasswordForEmail(values.email, {
+      redirectTo: `${window.location.origin}/auth/confirm?next=/reset-password`,
+    });
     if (error) {
       setServerError(error.message);
       return;
     }
-    router.replace(params.get("redirectedFrom") ?? "/dashboard");
-    router.refresh();
+    setSent(true);
+  }
+
+  if (sent) {
+    return (
+      <div className="space-y-4">
+        <p className="text-sm">
+          If an account exists for that email, a password reset link is on its
+          way. Check your inbox (and spam folder).
+        </p>
+        <Link href="/login" className="text-sm text-primary hover:underline">
+          ← Back to sign in
+        </Link>
+      </div>
+    );
   }
 
   return (
@@ -56,43 +68,19 @@ export function LoginForm() {
           <p className="text-xs text-danger">{errors.email.message}</p>
         )}
       </div>
-      <div className="space-y-1">
-        <div className="flex items-center justify-between">
-          <label htmlFor="password" className="text-sm font-medium">
-            Password
-          </label>
-          <Link
-            href="/forgot-password"
-            className="text-xs text-primary hover:underline"
-          >
-            Forgot password?
-          </Link>
-        </div>
-        <input
-          id="password"
-          type="password"
-          autoComplete="current-password"
-          {...register("password")}
-          className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm"
-        />
-        {errors.password && (
-          <p className="text-xs text-danger">{errors.password.message}</p>
-        )}
-      </div>
-      {params.get("error") === "link_expired" && !serverError && (
-        <p role="alert" className="text-sm text-danger">
-          That link is invalid or has expired. Request a new one via
-          &ldquo;Forgot password?&rdquo;.
-        </p>
-      )}
       {serverError && (
         <p role="alert" className="text-sm text-danger">
           {serverError}
         </p>
       )}
       <Button type="submit" className="w-full" disabled={isSubmitting}>
-        {isSubmitting ? "Signing in…" : "Sign in"}
+        {isSubmitting ? "Sending…" : "Send reset link"}
       </Button>
+      <p className="text-center">
+        <Link href="/login" className="text-sm text-muted hover:underline">
+          ← Back to sign in
+        </Link>
+      </p>
     </form>
   );
 }
