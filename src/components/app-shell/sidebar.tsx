@@ -16,7 +16,15 @@ export function Sidebar({ visibleHrefs }: { visibleHrefs: string[] }) {
           V
         </div>
         <div className="leading-tight">
-          <div className="text-sm font-semibold">Vicaria Health</div>
+          <div
+            className="text-sm font-bold"
+            style={{
+              fontFamily:
+                "var(--font-libre-baskerville), 'Libre Baskerville', Georgia, serif",
+            }}
+          >
+            Vicaria Health
+          </div>
           <div className="text-xs text-muted">Backoffice</div>
         </div>
       </div>
@@ -30,10 +38,10 @@ export function Sidebar({ visibleHrefs }: { visibleHrefs: string[] }) {
               href={item.href}
               aria-current={active ? "page" : undefined}
               className={cn(
-                "block rounded-md px-3 py-2 text-sm font-medium transition",
+                "block rounded-lg px-3 py-2 text-sm font-medium transition duration-150",
                 active
-                  ? "bg-primary/10 text-primary"
-                  : "text-foreground hover:bg-background",
+                  ? "bg-primary-soft text-primary-hover"
+                  : "text-foreground hover:bg-warm",
               )}
             >
               {item.label}

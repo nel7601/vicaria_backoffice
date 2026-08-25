@@ -7,6 +7,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
+import { inputClass } from "@/components/ui/field";
 
 const schema = z
   .object({
@@ -59,7 +60,7 @@ export function ResetPasswordForm() {
           type="password"
           autoComplete="new-password"
           {...register("password")}
-          className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm"
+          className={inputClass}
         />
         {errors.password && (
           <p className="text-xs text-danger">{errors.password.message}</p>
@@ -74,7 +75,7 @@ export function ResetPasswordForm() {
           type="password"
           autoComplete="new-password"
           {...register("confirm")}
-          className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm"
+          className={inputClass}
         />
         {errors.confirm && (
           <p className="text-xs text-danger">{errors.confirm.message}</p>

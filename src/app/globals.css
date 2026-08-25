@@ -1,21 +1,30 @@
 @import "tailwindcss";
 
 /*
- * Vicaria design tokens (spec §7 UX principles).
- * Desktop-first, WCAG AA contrast. Light theme is the operational default.
+ * Vicaria Health design tokens — aligned with the Vicaria Care design system
+ * (vicariacare DESIGN.md, extracted from the live vicaria.ca brand).
+ * Warm editorial light theme: cream canvas, charcoal copy, berry primary
+ * actions, botanical green trust/success, gold attention focus. WCAG AA.
  */
 :root {
-  --background: #f7f8fa;
+  color-scheme: light;
+  --background: #fdfbf7; /* vicaria canvas (cream) */
   --surface: #ffffff;
-  --foreground: #101828;
-  --muted: #667085;
-  --border: #e4e7ec;
-  --primary: #0f766e; /* teal-700 — clinical, calm */
+  --foreground: #2c2c2c; /* vicaria charcoal */
+  --muted: #6d625d; /* warm muted copy */
+  --border: #e7ddd7; /* warm hairline */
+  --primary: #c7367c; /* family berry — primary actions (4.94:1 on white) */
+  --primary-hover: #9e265f; /* berry deep — hover/pressed (7.25:1) */
+  --primary-soft: #fff2f8; /* family soft — selected/hover surfaces */
   --primary-foreground: #ffffff;
   --danger: #b42318;
-  --warning: #b54708;
-  --success: #027a48;
-  --ring: #14b8a6;
+  --warning: #8a5a00; /* dark amber text-safe */
+  --success: #3b692d; /* contrast leaf green (6.47:1 on white) */
+  --success-soft: #eff7ec; /* leaf soft — trust/verified surfaces */
+  --ring: #ffab00; /* attention gold focus */
+  --warm: #f8f0ed; /* warm feature surface (tabs, subtle fills) */
+  --shadow-feature:
+    0 20px 25px -5px rgb(44 44 44 / 8%), 0 8px 10px -6px rgb(44 44 44 / 5%);
 }
 
 @theme inline {
@@ -25,22 +34,46 @@
   --color-muted: var(--muted);
   --color-border: var(--border);
   --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-soft: var(--primary-soft);
   --color-primary-foreground: var(--primary-foreground);
   --color-danger: var(--danger);
   --color-warning: var(--warning);
   --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
   --color-ring: var(--ring);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-warm: var(--warm);
+  --font-sans: var(--font-inter);
+  --font-serif: var(--font-libre-baskerville);
+  --shadow-feature: var(--shadow-feature);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-sans), system-ui, -apple-system, sans-serif;
+  font-family: var(--font-inter), "Inter", system-ui, -apple-system, sans-serif;
+}
+
+/* Page and feature headings use the brand serif; labels, data and dense
+   operational content stay in Inter for scanability (design system rule). */
+h1,
+h2 {
+  font-family:
+    var(--font-libre-baskerville), "Libre Baskerville", Georgia, serif;
+  letter-spacing: -0.01em;
 }
 
 *:focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: 2px;
+}
+
+/* Restrained motion; removed entirely under prefers-reduced-motion. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }

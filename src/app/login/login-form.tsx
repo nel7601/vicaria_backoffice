@@ -8,6 +8,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
+import { inputClass } from "@/components/ui/field";
 
 const schema = z.object({
   email: z.string().email("Enter a valid email"),
@@ -50,7 +51,7 @@ export function LoginForm() {
           type="email"
           autoComplete="email"
           {...register("email")}
-          className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm"
+          className={inputClass}
         />
         {errors.email && (
           <p className="text-xs text-danger">{errors.email.message}</p>
@@ -73,7 +74,7 @@ export function LoginForm() {
           type="password"
           autoComplete="current-password"
           {...register("password")}
-          className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm"
+          className={inputClass}
         />
         {errors.password && (
           <p className="text-xs text-danger">{errors.password.message}</p>

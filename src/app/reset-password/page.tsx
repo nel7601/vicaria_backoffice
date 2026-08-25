@@ -20,7 +20,7 @@ export default async function ResetPasswordPage() {
             V
           </div>
           <div>
-            <div className="font-semibold">Vicaria Health</div>
+            <div className="font-bold" style={{ fontFamily: "var(--font-libre-baskerville), Georgia, serif" }}>Vicaria Health</div>
             <div className="text-xs text-muted">Choose a new password</div>
           </div>
         </div>
