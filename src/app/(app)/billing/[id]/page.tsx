@@ -9,8 +9,12 @@ import {
   listAllocatablePayments,
   listPendingEtransfersForInvoice,
 } from "@/lib/db/queries/billing";
-import { getPrimaryOrganization } from "@/lib/db/queries/organization";
+import {
+  getPrimaryOrganization,
+  listServicesWithPrice,
+} from "@/lib/db/queries/organization";
 import { InvoiceActions } from "./invoice-actions";
+import { DraftEditor, type DraftServiceOption } from "./draft-editor";
 
 export default async function InvoiceDetailPage({
   params,
@@ -34,6 +38,7 @@ export default async function InvoiceDetailPage({
   let pendingEtransfers: Awaited<
     ReturnType<typeof listPendingEtransfersForInvoice>
   > = [];
+  let serviceOptions: DraftServiceOption[] = [];
   let dbError: string | null = null;
   try {
     const org = await getPrimaryOrganization();
@@ -44,6 +49,16 @@ export default async function InvoiceDetailPage({
           listAllocatablePayments(org.id, data.invoice.patientId),
           listPendingEtransfersForInvoice(org.id, id),
         ]);
+        if (data.invoice.status === "draft") {
+          serviceOptions = (await listServicesWithPrice(org.id))
+            .filter((sv) => sv.isActive)
+            .map((sv) => ({
+              id: sv.id,
+              label: sv.nameEn,
+              priceCents: sv.priceCents ?? 0,
+              taxRateBps: sv.taxRateBps ?? 0,
+            }));
+        }
       }
     }
   } catch (e) {
@@ -110,6 +125,23 @@ export default async function InvoiceDetailPage({
           <p className="mt-3 whitespace-pre-wrap rounded-md bg-warm/60 p-3 text-sm">
             {invoice.notes}
           </p>
+        )}
+        {canUpdate && invoice.status === "draft" && (
+          <div className="mt-4">
+            <DraftEditor
+              invoiceId={invoice.id}
+              language={invoice.language as "en" | "es"}
+              notes={invoice.notes}
+              items={items.map((it) => ({
+                serviceId: it.serviceId,
+                description: it.description,
+                quantity: it.quantity,
+                unitPriceCents: it.unitPriceCents,
+                taxRateBps: it.taxRateBps,
+              }))}
+              services={serviceOptions}
+            />
+          </div>
         )}
         <div className="mt-4 space-y-1 text-right text-sm">
           <div>Subtotal: {formatCents(invoice.subtotalCents)}</div>

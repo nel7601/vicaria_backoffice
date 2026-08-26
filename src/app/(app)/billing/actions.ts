@@ -27,6 +27,7 @@ import {
   creditNoteSchema,
   recordPaymentSchema,
   refundSchema,
+  updateInvoiceDraftSchema,
   voidInvoiceSchema,
 } from "@/lib/schemas/billing";
 import {
@@ -145,6 +146,84 @@ export async function createInvoiceAction(raw: unknown): Promise<BillingResult> 
 
   revalidatePath("/billing");
   return { ok: true, id: created.id };
+}
+
+/**
+ * Edit a pre-invoice while it is still a draft (spec §7.1): rewrite the
+ * lines, notes and language, recomputing the totals. Refused once issued —
+ * corrections after issuing go through void / credit note.
+ */
+export async function updateInvoiceDraftAction(
+  invoiceId: string,
+  raw: unknown,
+): Promise<BillingResult> {
+  const user = await authorize("invoices_payments", "update");
+  const parsed = updateInvoiceDraftSchema.safeParse(raw);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
+  }
+  const org = await getPrimaryOrganization();
+  if (!org) return { ok: false, error: "Organization not found." };
+
+  const db = getDb();
+  const [inv] = await db
+    .select()
+    .from(invoices)
+    .where(and(eq(invoices.organizationId, org.id), eq(invoices.id, invoiceId)))
+    .limit(1);
+  if (!inv) return { ok: false, error: "Invoice not found." };
+  if (inv.status !== "draft" || inv.invoiceNumber) {
+    return { ok: false, error: "Only a draft pre-invoice can be edited." };
+  }
+
+  const totals = computeInvoiceTotals(parsed.data.items);
+
+  await db.transaction(async (tx) => {
+    await tx.delete(invoiceItems).where(eq(invoiceItems.invoiceId, invoiceId));
+    for (const item of parsed.data.items) {
+      const gross = item.quantity * item.unitPriceCents;
+      const net = Math.max(0, gross - (item.discountCents ?? 0));
+      const lineTotal = net + Math.round((net * (item.taxRateBps ?? 0)) / 10000);
+      await tx.insert(invoiceItems).values({
+        organizationId: org.id,
+        invoiceId,
+        description: item.description,
+        quantity: item.quantity,
+        unitPriceCents: item.unitPriceCents,
+        discountCents: item.discountCents ?? 0,
+        taxRateBps: item.taxRateBps ?? 0,
+        lineTotalCents: lineTotal,
+        serviceId: item.serviceId ?? null,
+      });
+    }
+    await tx
+      .update(invoices)
+      .set({
+        language: parsed.data.language,
+        notes: parsed.data.notes || null,
+        subtotalCents: totals.subtotalCents,
+        discountCents: totals.discountCents,
+        taxCents: totals.taxCents,
+        totalCents: totals.totalCents,
+        balanceCents: totals.totalCents,
+        updatedAt: new Date(),
+      })
+      .where(eq(invoices.id, invoiceId));
+  });
+
+  await recordAudit({
+    organizationId: org.id,
+    actorUserId: user.authId,
+    action: "update",
+    entityType: "invoice",
+    entityId: invoiceId,
+    before: { totalCents: inv.totalCents },
+    after: { totalCents: totals.totalCents, items: parsed.data.items.length },
+  });
+
+  revalidatePath(`/billing/${invoiceId}`);
+  revalidatePath("/billing");
+  return { ok: true, id: invoiceId };
 }
 
 /** FR-INV-002: issue a draft — assign an immutable sequential number. */

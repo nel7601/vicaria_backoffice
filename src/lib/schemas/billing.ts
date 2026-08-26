@@ -22,6 +22,15 @@ export const createInvoiceSchema = z.object({
 
 export type CreateInvoiceInput = z.infer<typeof createInvoiceSchema>;
 
+/** Editing a pre-invoice: everything but the patient can change while draft. */
+export const updateInvoiceDraftSchema = z.object({
+  language: z.enum(["en", "es"]),
+  notes: z.string().trim().max(2000).optional().or(z.literal("")),
+  items: z.array(invoiceItemSchema).min(1, "At least one line is required"),
+});
+
+export type UpdateInvoiceDraftInput = z.infer<typeof updateInvoiceDraftSchema>;
+
 export const paymentMethod = z.enum([
   "cash",
   "e_transfer",
