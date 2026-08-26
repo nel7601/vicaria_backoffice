@@ -189,3 +189,28 @@ export async function listAllocatablePayments(
     }))
     .filter((r) => r.remainingCents > 0);
 }
+
+/** Pending e-transfers taken via the invoice Pay flow, awaiting verification. */
+export async function listPendingEtransfersForInvoice(
+  organizationId: string,
+  invoiceId: string,
+) {
+  const db = getDb();
+  return db
+    .select({
+      id: payments.id,
+      amountCents: payments.amountCents,
+      etransferSenderName: payments.etransferSenderName,
+      reference: payments.reference,
+      receivedAt: payments.receivedAt,
+    })
+    .from(payments)
+    .where(
+      and(
+        eq(payments.organizationId, organizationId),
+        eq(payments.method, "e_transfer"),
+        eq(payments.status, "pending"),
+        sql`${payments.metadata} ->> 'intendedInvoiceId' = ${invoiceId}`,
+      ),
+    );
+}

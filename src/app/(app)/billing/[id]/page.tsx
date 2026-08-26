@@ -7,6 +7,7 @@ import { formatCents } from "@/lib/domain/money";
 import {
   getInvoice,
   listAllocatablePayments,
+  listPendingEtransfersForInvoice,
 } from "@/lib/db/queries/billing";
 import { getPrimaryOrganization } from "@/lib/db/queries/organization";
 import { InvoiceActions } from "./invoice-actions";
@@ -30,13 +31,19 @@ export default async function InvoiceDetailPage({
 
   let data: Awaited<ReturnType<typeof getInvoice>> = null;
   let allocatable: Awaited<ReturnType<typeof listAllocatablePayments>> = [];
+  let pendingEtransfers: Awaited<
+    ReturnType<typeof listPendingEtransfersForInvoice>
+  > = [];
   let dbError: string | null = null;
   try {
     const org = await getPrimaryOrganization();
     if (org) {
       data = await getInvoice(org.id, id);
       if (data) {
-        allocatable = await listAllocatablePayments(org.id, data.invoice.patientId);
+        [allocatable, pendingEtransfers] = await Promise.all([
+          listAllocatablePayments(org.id, data.invoice.patientId),
+          listPendingEtransfersForInvoice(org.id, id),
+        ]);
       }
     }
   } catch (e) {
@@ -63,7 +70,7 @@ export default async function InvoiceDetailPage({
           ← Billing
         </Link>
         <h1 className="mt-1 text-xl font-semibold">
-          {invoice.invoiceNumber ?? "Draft invoice"}
+          {invoice.invoiceNumber ?? "Pre-invoice (draft)"}
         </h1>
         <p className="text-sm text-muted">
           {patient
@@ -139,6 +146,7 @@ export default async function InvoiceDetailPage({
               status={invoice.status}
               balanceCents={invoice.balanceCents}
               allocatable={allocatable}
+              pendingEtransfers={pendingEtransfers}
             />
           </div>
         </Card>
