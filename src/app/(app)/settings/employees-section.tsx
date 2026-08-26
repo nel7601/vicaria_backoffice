@@ -154,12 +154,12 @@ export function EmployeesSection({
               ))}
               {e.isPractitioner && (
                 <span className="rounded-full bg-success/10 px-2 py-0.5 text-success">
-                  atiende consultas
+                  sees patients
                 </span>
               )}
               {e.isCaregiver && (
                 <span className="rounded-full bg-primary-soft px-2 py-0.5 text-primary-hover">
-                  cuidador
+                  caregiver
                 </span>
               )}
               {!e.isActive && (

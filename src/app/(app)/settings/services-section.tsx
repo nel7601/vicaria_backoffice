@@ -151,7 +151,7 @@ export function ServicesSection({
           <thead>
             <tr className="border-b border-border text-left text-xs uppercase text-muted">
               <th className="py-2 pr-4">Service (EN)</th>
-              <th className="py-2 pr-4">Servicio (ES)</th>
+              <th className="py-2 pr-4">Service (ES)</th>
               <th className="py-2 pr-4">Category</th>
               <th className="py-2 pr-4">Family</th>
               <th className="py-2 pr-4">Unit</th>
@@ -252,7 +252,7 @@ export function ServicesSection({
             />
           </label>
           <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium">Nombre (ES)</span>
+            <span className="font-medium">Name (ES)</span>
             <input
               className={inputClass}
               value={form.nameEs}

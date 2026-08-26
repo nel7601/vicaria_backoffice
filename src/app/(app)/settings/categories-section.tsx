@@ -146,7 +146,7 @@ export function CategoriesSection({
             />
           </label>
           <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium">Nombre (ES) — opcional</span>
+            <span className="font-medium">Name (ES) — optional</span>
             <input
               className={inputClass}
               placeholder="coaching"

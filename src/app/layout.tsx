@@ -19,7 +19,7 @@ const libreBaskerville = Libre_Baskerville({
 export const metadata: Metadata = {
   title: "Vicaria Health — Backoffice",
   description:
-    "Backoffice clínico y administrativo de Vicaria Health (practice management).",
+    "Vicaria Health clinical and administrative back office (practice management).",
 };
 
 export default function RootLayout({
