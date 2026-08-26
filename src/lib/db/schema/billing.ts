@@ -40,6 +40,8 @@ export const invoices = pgTable(
       .references(() => patients.id),
     invoiceNumber: varchar("invoice_number", { length: 40 }),
     status: invoiceStatusEnum("status").notNull().default("draft"),
+    /** General description/notes shown on the invoice (spec §11). */
+    notes: text("notes"),
     issueDate: timestamp("issue_date", { withTimezone: true, mode: "date" }),
     dueDate: timestamp("due_date", { withTimezone: true, mode: "date" }),
     subtotalCents: integer("subtotal_cents").notNull().default(0),

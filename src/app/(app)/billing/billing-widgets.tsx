@@ -76,7 +76,7 @@ export function RecordPaymentForm({
   }
 
   return (
-    <div className="flex flex-wrap items-end gap-2 rounded-md border border-border p-3">
+    <div className="flex w-full flex-wrap items-end gap-2 rounded-2xl border border-border bg-surface p-4">
       <select
         className={`${inputClass} max-w-56`}
         value={patientId}

@@ -3,14 +3,17 @@ import { Card, CardTitle } from "@/components/ui/card";
 import { getSessionUser } from "@/lib/auth/session";
 import { can } from "@/lib/auth/rbac";
 import { formatCents } from "@/lib/domain/money";
-import { getPrimaryOrganization } from "@/lib/db/queries/organization";
+import {
+  getPrimaryOrganization,
+  listServicesWithPrice,
+} from "@/lib/db/queries/organization";
 import {
   listInvoices,
   listPayments,
   listUnverifiedEtransfers,
 } from "@/lib/db/queries/billing";
 import { listPatients } from "@/lib/db/queries/patients";
-import { NewInvoiceForm } from "./new-invoice-form";
+import { NewInvoiceForm, type InvoiceServiceOption } from "./new-invoice-form";
 import { EtransferVerifyButton, RecordPaymentForm } from "./billing-widgets";
 
 const STATUS_STYLE: Record<string, string> = {
@@ -45,6 +48,7 @@ export default async function BillingPage() {
   let payments: Awaited<ReturnType<typeof listPayments>> = [];
   let etransfers: Awaited<ReturnType<typeof listUnverifiedEtransfers>> = [];
   let patients: { id: string; label: string }[] = [];
+  let serviceOptions: InvoiceServiceOption[] = [];
   let dbError: string | null = null;
 
   try {
@@ -57,6 +61,14 @@ export default async function BillingPage() {
       ]);
       if (canCreate) {
         const pats = await listPatients({ organizationId: org.id, limit: 100 });
+        serviceOptions = (await listServicesWithPrice(org.id))
+          .filter((sv) => sv.isActive)
+          .map((sv) => ({
+            id: sv.id,
+            label: sv.nameEn,
+            priceCents: sv.priceCents ?? 0,
+            taxRateBps: sv.taxRateBps ?? 0,
+          }));
         patients = pats.map((p) => ({
           id: p.id,
           label: `${p.preferredName || p.legalFirstName} ${p.legalLastName} (${p.patientNumber})`,
@@ -77,7 +89,9 @@ export default async function BillingPage() {
             Invoices, payments, allocations, receipts and reconciliation.
           </p>
         </div>
-        {canCreate && !dbError && <NewInvoiceForm patients={patients} />}
+        {canCreate && !dbError && (
+          <NewInvoiceForm patients={patients} services={serviceOptions} />
+        )}
       </div>
 
       {dbError && (
@@ -150,7 +164,11 @@ export default async function BillingPage() {
         </div>
       </Card>
 
-      {canCreate && !dbError && <RecordPaymentForm patients={patients} />}
+      {canCreate && !dbError && (
+        <div className="w-full">
+          <RecordPaymentForm patients={patients} />
+        </div>
+      )}
 
       {/* Recent payments */}
       <Card>

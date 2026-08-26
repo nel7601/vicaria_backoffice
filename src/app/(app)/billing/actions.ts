@@ -105,6 +105,7 @@ export async function createInvoiceAction(raw: unknown): Promise<BillingResult> 
         patientId: parsed.data.patientId,
         status: "draft",
         language: parsed.data.language,
+        notes: parsed.data.notes || null,
         dueDate: parsed.data.dueDate ? new Date(parsed.data.dueDate) : null,
         subtotalCents: totals.subtotalCents,
         discountCents: totals.discountCents,
@@ -205,6 +206,7 @@ export async function issueInvoiceAction(invoiceId: string): Promise<BillingResu
           snapshot: {
             invoiceNumber: assignedNumber,
             issuedAt: now.toISOString(),
+            notes: inv.notes,
             company: {
               legalName: org.legalName,
               currency: org.currency,

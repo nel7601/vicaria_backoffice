@@ -15,6 +15,8 @@ export const createInvoiceSchema = z.object({
   patientId: z.string().uuid(),
   language: z.enum(["en", "es"]),
   dueDate: z.string().date().optional(),
+  /** One general description for the whole invoice. */
+  notes: z.string().trim().max(2000).optional().or(z.literal("")),
   items: z.array(invoiceItemSchema).min(1, "At least one line is required"),
 });
 

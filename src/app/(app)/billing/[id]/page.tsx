@@ -106,6 +106,11 @@ export default async function InvoiceDetailPage({
             </tbody>
           </table>
         </div>
+        {invoice.notes && (
+          <p className="mt-3 whitespace-pre-wrap rounded-md bg-warm/60 p-3 text-sm">
+            {invoice.notes}
+          </p>
+        )}
         <div className="mt-4 space-y-1 text-right text-sm">
           <div>Subtotal: {formatCents(invoice.subtotalCents)}</div>
           <div>Discount: {formatCents(invoice.discountCents)}</div>
