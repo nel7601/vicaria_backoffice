@@ -13,6 +13,8 @@ export const careAgreementSchema = z.object({
     .or(z.literal("")),
   hourlyRateDollars: z.number().min(0).max(10000),
   carePlan: z.string().trim().max(4000).optional().or(z.literal("")),
+  /** Default visit task labels copied onto each new shift (spec §10.1). */
+  defaultTasks: z.array(z.string().trim().min(1).max(120)).max(30).optional(),
   address: z.string().trim().max(500).optional().or(z.literal("")),
 });
 
@@ -46,6 +48,7 @@ export const careShiftStatusChangeSchema = z.object({
     "completed",
     "cancelled",
     "no_show",
+    "missed",
   ]),
   reason: z.string().trim().max(500).optional().or(z.literal("")),
   visitNotes: z.string().trim().max(2000).optional().or(z.literal("")),
@@ -54,3 +57,24 @@ export const careShiftStatusChangeSchema = z.object({
 export type CareShiftStatusChangeInput = z.infer<
   typeof careShiftStatusChangeSchema
 >;
+
+export const shiftTaskSchema = z.object({
+  label: z.string().trim().min(1).max(120),
+  status: z.enum(["pending", "done", "not_done", "na"]),
+  comment: z.string().trim().max(300).optional().or(z.literal("")),
+});
+
+export const updateShiftTasksSchema = z.object({
+  tasks: z.array(shiftTaskSchema).max(30),
+});
+
+export const careIncidentSchema = z.object({
+  severity: z.enum(["low", "medium", "high", "critical"]),
+  description: z.string().trim().min(5, "Describe the incident").max(3000),
+});
+
+export const approveShiftSchema = z.object({
+  /** Approved billable minutes; defaults to actual worked minutes. */
+  approvedMinutes: z.number().int().min(0).max(24 * 60).optional(),
+  visitNotes: z.string().trim().max(2000).optional().or(z.literal("")),
+});

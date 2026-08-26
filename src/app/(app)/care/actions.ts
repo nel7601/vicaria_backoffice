@@ -5,24 +5,39 @@ import { and, eq } from "drizzle-orm";
 import { authorize } from "@/lib/auth/authorize";
 import { recordAudit } from "@/lib/audit/record";
 import { getDb } from "@/lib/db";
-import { careAgreements, careContacts, careShifts } from "@/lib/db/schema";
+import {
+  careAgreements,
+  careContacts,
+  careIncidents,
+  careShifts,
+  invoiceItems,
+  invoices,
+} from "@/lib/db/schema";
 import { getPrimaryOrganization } from "@/lib/db/queries/organization";
 import { caregiverShiftsAround } from "@/lib/db/queries/care";
 import {
+  approveShiftSchema,
   careAgreementSchema,
   careContactSchema,
+  careIncidentSchema,
   careShiftSchema,
   careShiftStatusChangeSchema,
+  updateShiftTasksSchema,
 } from "@/lib/schemas/care";
 import {
   canTransitionAgreement,
   canTransitionShift,
+  checkOutOutcome,
   findShiftConflicts,
+  formatMinutes,
   isValidShiftRange,
+  shiftMinutes,
   shiftTransitionRequiresReason,
+  workedMinutes,
   type CareAgreementStatus,
   type CareShiftStatus,
 } from "@/lib/domain/care";
+import { clinicWeekWindow, shiftDay } from "@/lib/domain/timezone";
 
 export interface CareResult {
   ok: boolean;
@@ -64,6 +79,7 @@ export async function createCareAgreementAction(
       hourlyRateCents: Math.round(data.hourlyRateDollars * 100),
       currency: org.currency,
       carePlan: blankToNull(data.carePlan),
+      defaultTasks: data.defaultTasks ?? [],
       address: blankToNull(data.address),
     })
     .returning();
@@ -226,6 +242,7 @@ export async function createCareShiftAction(
     .select({
       patientId: careAgreements.patientId,
       status: careAgreements.status,
+      defaultTasks: careAgreements.defaultTasks,
     })
     .from(careAgreements)
     .where(
@@ -269,6 +286,11 @@ export async function createCareShiftAction(
         endAt: end,
         status: "scheduled",
         visitNotes: blankToNull(data.visitNotes),
+        // Visit checklist seeded from the care plan (spec §10.1/§10.2).
+        tasks: (agreement.defaultTasks ?? []).map((label) => ({
+          label,
+          status: "pending",
+        })),
         createdBy: user.dbUserId,
       })
       .returning();
@@ -323,6 +345,9 @@ export async function changeCareShiftStatusAction(
     .select({
       status: careShifts.status,
       agreementId: careShifts.agreementId,
+      startAt: careShifts.startAt,
+      endAt: careShifts.endAt,
+      checkInAt: careShifts.checkInAt,
     })
     .from(careShifts)
     .where(
@@ -332,7 +357,24 @@ export async function changeCareShiftStatusAction(
   if (!shift) return { ok: false, error: "Shift not found." };
 
   const from = shift.status as CareShiftStatus;
-  const to = parsed.data.status;
+  let to = parsed.data.status as CareShiftStatus;
+  const now = new Date();
+
+  // Check-out (spec §10.4): a relevant difference between scheduled and
+  // actual time routes the visit to needs_review instead of completed.
+  let approved: number | undefined;
+  if (to === "completed" && from === "in_progress") {
+    const scheduled = shiftMinutes(shift);
+    const actual = workedMinutes({
+      startAt: shift.startAt,
+      endAt: shift.endAt,
+      checkInAt: shift.checkInAt,
+      checkOutAt: now,
+    });
+    to = checkOutOutcome(scheduled, actual);
+    if (to === "completed") approved = actual;
+  }
+
   if (!canTransitionShift(from, to)) {
     return { ok: false, error: `Cannot change shift from ${from} to ${to}.` };
   }
@@ -340,16 +382,19 @@ export async function changeCareShiftStatusAction(
     return { ok: false, error: `A reason is required to mark ${to}.` };
   }
 
-  const now = new Date();
   await db
     .update(careShifts)
     .set({
       status: to,
       checkInAt: to === "in_progress" ? now : undefined,
-      checkOutAt: to === "completed" ? now : undefined,
+      checkOutAt:
+        to === "completed" || to === "needs_review" ? now : undefined,
+      approvedMinutes: approved,
+      approvedBy: approved !== undefined ? user.dbUserId : undefined,
+      approvedAt: approved !== undefined ? now : undefined,
       visitNotes: parsed.data.visitNotes ? parsed.data.visitNotes : undefined,
       cancellationReason:
-        to === "cancelled" || to === "no_show"
+        to === "cancelled" || to === "no_show" || to === "missed"
           ? (parsed.data.reason ?? null)
           : undefined,
       updatedAt: now,
@@ -363,11 +408,269 @@ export async function changeCareShiftStatusAction(
     entityType: "care_shift",
     entityId: shiftId,
     before: { status: from },
-    after: { status: to },
+    after: { status: to, approvedMinutes: approved },
     reason: parsed.data.reason || undefined,
   });
 
   revalidatePath(`/care/${shift.agreementId}`);
   revalidatePath("/care/schedule");
   return { ok: true, id: shiftId };
+}
+
+/** Save the visit task checklist (spec §10.2). */
+export async function updateShiftTasksAction(
+  shiftId: string,
+  raw: unknown,
+): Promise<CareResult> {
+  const user = await authorize("home_care", "update");
+  const parsed = updateShiftTasksSchema.safeParse(raw);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
+  }
+  const org = await getPrimaryOrganization();
+  if (!org) return { ok: false, error: "Organization not found." };
+
+  const db = getDb();
+  const [shift] = await db
+    .select({ agreementId: careShifts.agreementId, status: careShifts.status })
+    .from(careShifts)
+    .where(and(eq(careShifts.organizationId, org.id), eq(careShifts.id, shiftId)))
+    .limit(1);
+  if (!shift) return { ok: false, error: "Shift not found." };
+
+  await db
+    .update(careShifts)
+    .set({
+      tasks: parsed.data.tasks.map((t) => ({
+        label: t.label,
+        status: t.status,
+        comment: t.comment || undefined,
+      })),
+      updatedAt: new Date(),
+    })
+    .where(eq(careShifts.id, shiftId));
+
+  await recordAudit({
+    organizationId: org.id,
+    actorUserId: user.authId,
+    action: "update",
+    entityType: "care_shift_tasks",
+    entityId: shiftId,
+    after: { tasks: parsed.data.tasks.length },
+  });
+
+  revalidatePath(`/care/${shift.agreementId}`);
+  return { ok: true, id: shiftId };
+}
+
+/** Report a safety/care incident during a visit (spec §10.2). */
+export async function reportCareIncidentAction(
+  shiftId: string,
+  raw: unknown,
+): Promise<CareResult> {
+  const user = await authorize("home_care", "update");
+  const parsed = careIncidentSchema.safeParse(raw);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
+  }
+  const org = await getPrimaryOrganization();
+  if (!org) return { ok: false, error: "Organization not found." };
+
+  const db = getDb();
+  const [shift] = await db
+    .select({
+      agreementId: careShifts.agreementId,
+      patientId: careShifts.patientId,
+      caregiverId: careShifts.caregiverId,
+    })
+    .from(careShifts)
+    .where(and(eq(careShifts.organizationId, org.id), eq(careShifts.id, shiftId)))
+    .limit(1);
+  if (!shift) return { ok: false, error: "Shift not found." };
+
+  const [created] = await db
+    .insert(careIncidents)
+    .values({
+      organizationId: org.id,
+      shiftId,
+      patientId: shift.patientId,
+      caregiverId: shift.caregiverId,
+      severity: parsed.data.severity,
+      description: parsed.data.description,
+      reportedBy: user.dbUserId,
+    })
+    .returning();
+
+  await recordAudit({
+    organizationId: org.id,
+    actorUserId: user.authId,
+    action: "create",
+    entityType: "care_incident",
+    entityId: created.id,
+    after: { severity: parsed.data.severity, shiftId },
+  });
+
+  revalidatePath(`/care/${shift.agreementId}`);
+  return { ok: true, id: created.id };
+}
+
+/** Approve a needs_review visit's hours (spec §10.4) — admin resolves it. */
+export async function approveShiftHoursAction(
+  shiftId: string,
+  raw: unknown,
+): Promise<CareResult> {
+  const user = await authorize("home_care", "update");
+  const parsed = approveShiftSchema.safeParse(raw);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
+  }
+  const org = await getPrimaryOrganization();
+  if (!org) return { ok: false, error: "Organization not found." };
+
+  const db = getDb();
+  const [shift] = await db
+    .select()
+    .from(careShifts)
+    .where(and(eq(careShifts.organizationId, org.id), eq(careShifts.id, shiftId)))
+    .limit(1);
+  if (!shift) return { ok: false, error: "Shift not found." };
+  if (shift.status !== "needs_review") {
+    return { ok: false, error: "Only visits in needs review can be approved." };
+  }
+
+  const approved =
+    parsed.data.approvedMinutes ??
+    workedMinutes({
+      startAt: shift.startAt,
+      endAt: shift.endAt,
+      checkInAt: shift.checkInAt,
+      checkOutAt: shift.checkOutAt,
+    });
+
+  const now = new Date();
+  await db
+    .update(careShifts)
+    .set({
+      status: "completed",
+      approvedMinutes: approved,
+      approvedBy: user.dbUserId,
+      approvedAt: now,
+      visitNotes: parsed.data.visitNotes ? parsed.data.visitNotes : undefined,
+      updatedAt: now,
+    })
+    .where(eq(careShifts.id, shiftId));
+
+  await recordAudit({
+    organizationId: org.id,
+    actorUserId: user.authId,
+    action: "update",
+    entityType: "care_shift",
+    entityId: shiftId,
+    before: { status: "needs_review" },
+    after: { status: "completed", approvedMinutes: approved },
+    reason: "Hours approved after review",
+  });
+
+  revalidatePath(`/care/${shift.agreementId}`);
+  revalidatePath("/care/schedule");
+  return { ok: true, id: shiftId };
+}
+
+/**
+ * Generate a draft invoice for one clinic-week of approved home-care hours
+ * (spec §10.4 / §11: billing without manual transcription).
+ */
+export async function generateCareInvoiceAction(
+  agreementId: string,
+  weekStartDay: string,
+): Promise<CareResult> {
+  const user = await authorize("invoices_payments", "create");
+  const org = await getPrimaryOrganization();
+  if (!org) return { ok: false, error: "Organization not found." };
+
+  const db = getDb();
+  const [agreement] = await db
+    .select()
+    .from(careAgreements)
+    .where(
+      and(
+        eq(careAgreements.organizationId, org.id),
+        eq(careAgreements.id, agreementId),
+      ),
+    )
+    .limit(1);
+  if (!agreement) return { ok: false, error: "Agreement not found." };
+
+  const { from, to, weekStart } = clinicWeekWindow(weekStartDay);
+  const weekShifts = await db
+    .select()
+    .from(careShifts)
+    .where(
+      and(
+        eq(careShifts.organizationId, org.id),
+        eq(careShifts.agreementId, agreementId),
+      ),
+    );
+
+  const billable = weekShifts.filter(
+    (s) =>
+      s.status === "completed" &&
+      s.startAt >= from &&
+      s.startAt < to &&
+      (s.approvedMinutes ?? 0) > 0,
+  );
+  const minutes = billable.reduce((sum, s) => sum + (s.approvedMinutes ?? 0), 0);
+  if (minutes === 0) {
+    return {
+      ok: false,
+      error: "No approved completed hours in that week to invoice.",
+    };
+  }
+
+  const amount = Math.round((minutes / 60) * agreement.hourlyRateCents);
+  const weekEnd = shiftDay(weekStart, 6);
+
+  const [inv] = await db.transaction(async (tx) => {
+    const created = await tx
+      .insert(invoices)
+      .values({
+        organizationId: org.id,
+        patientId: agreement.patientId,
+        status: "draft",
+        subtotalCents: amount,
+        taxCents: 0,
+        totalCents: amount,
+        balanceCents: amount,
+        currency: agreement.currency,
+      })
+      .returning();
+    await tx.insert(invoiceItems).values({
+      organizationId: org.id,
+      invoiceId: created[0].id,
+      description: `Home care — ${formatMinutes(minutes)} approved (week ${weekStart} → ${weekEnd}, ${billable.length} visit${billable.length === 1 ? "" : "s"})`,
+      quantity: 1,
+      unitPriceCents: amount,
+      taxRateBps: 0,
+      lineTotalCents: amount,
+    });
+    return created;
+  });
+
+  await recordAudit({
+    organizationId: org.id,
+    actorUserId: user.authId,
+    action: "create",
+    entityType: "invoice",
+    entityId: inv.id,
+    after: {
+      source: "home_care",
+      agreementId,
+      week: weekStart,
+      minutes,
+      amountCents: amount,
+    },
+  });
+
+  revalidatePath("/billing");
+  return { ok: true, id: inv.id };
 }

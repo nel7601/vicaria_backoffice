@@ -20,8 +20,10 @@ export const CARE_SHIFT_STATUSES = [
   "confirmed",
   "in_progress",
   "completed",
+  "needs_review",
   "cancelled",
   "no_show",
+  "missed",
 ] as const;
 export type CareShiftStatus = (typeof CARE_SHIFT_STATUSES)[number];
 
@@ -41,19 +43,22 @@ export function canTransitionAgreement(
 }
 
 /**
- * Shift lifecycle:
- * scheduled → confirmed | cancelled
- * confirmed → in_progress (check-in) | cancelled | no_show
- * scheduled → in_progress (check-in without prior confirm) | no_show
- * in_progress → completed (check-out)
+ * Shift lifecycle (spec §10.3):
+ * scheduled → confirmed | in_progress (check-in) | cancelled | no_show | missed
+ * confirmed → in_progress | cancelled | no_show | missed
+ * in_progress → completed | needs_review (check-out with a relevant
+ *   difference between scheduled and actual time, or pending items)
+ * needs_review → completed (admin approves hours)
  */
 const SHIFT_TRANSITIONS: Record<CareShiftStatus, CareShiftStatus[]> = {
-  scheduled: ["confirmed", "in_progress", "cancelled", "no_show"],
-  confirmed: ["in_progress", "cancelled", "no_show"],
-  in_progress: ["completed"],
+  scheduled: ["confirmed", "in_progress", "cancelled", "no_show", "missed"],
+  confirmed: ["in_progress", "cancelled", "no_show", "missed"],
+  in_progress: ["completed", "needs_review"],
+  needs_review: ["completed"],
   completed: [],
   cancelled: [],
   no_show: [],
+  missed: [],
 };
 
 export function canTransitionShift(
@@ -64,7 +69,7 @@ export function canTransitionShift(
 }
 
 export function shiftTransitionRequiresReason(to: CareShiftStatus): boolean {
-  return to === "cancelled" || to === "no_show";
+  return to === "cancelled" || to === "no_show" || to === "missed";
 }
 
 /** Statuses that block a caregiver's time (mirror of the DB exclusion). */
@@ -73,7 +78,31 @@ export const ACTIVE_SHIFT_STATUSES: CareShiftStatus[] = [
   "confirmed",
   "in_progress",
   "completed",
+  "needs_review",
 ];
+
+/**
+ * Minutes of tolerance between scheduled and actual duration before a
+ * checked-out visit needs administrative review (spec §10.4).
+ */
+export const REVIEW_THRESHOLD_MINUTES = 15;
+
+/**
+ * Outcome of a check-out: completed when actual time matches the schedule
+ * within tolerance, needs_review otherwise (admin approves the hours).
+ */
+export function checkOutOutcome(
+  scheduledMinutes: number,
+  actualMinutes: number,
+  toleranceMinutes: number = REVIEW_THRESHOLD_MINUTES,
+): "completed" | "needs_review" {
+  return Math.abs(actualMinutes - scheduledMinutes) > toleranceMinutes
+    ? "needs_review"
+    : "completed";
+}
+
+/** Statuses whose hours count as billable once approved (spec §10.4). */
+export const BILLABLE_SHIFT_STATUSES: CareShiftStatus[] = ["completed"];
 
 export interface TimeRange {
   startAt: Date;

@@ -2,6 +2,7 @@ import {
   boolean,
   date,
   integer,
+  jsonb,
   pgTable,
   text,
   timestamp,
@@ -9,7 +10,11 @@ import {
   varchar,
 } from "drizzle-orm/pg-core";
 import { primaryId, timestamps } from "./_shared";
-import { careAgreementStatusEnum, careShiftStatusEnum } from "./enums";
+import {
+  careAgreementStatusEnum,
+  careIncidentSeverityEnum,
+  careShiftStatusEnum,
+} from "./enums";
 import { organizations } from "./organizations";
 import { employees, users } from "./users";
 import { patients } from "./patients";
@@ -64,6 +69,8 @@ export const careAgreements = pgTable("care_agreements", {
   currency: varchar("currency", { length: 3 }).notNull().default("CAD"),
   /** Care plan summary: routines, mobility, medication reminders, etc. */
   carePlan: text("care_plan"),
+  /** Default visit task labels copied onto each new shift (spec §10.1). */
+  defaultTasks: jsonb("default_tasks").$type<string[]>().notNull().default([]),
   address: text("address"),
   ...timestamps,
 });
@@ -91,7 +98,35 @@ export const careShifts = pgTable("care_shifts", {
   checkOutAt: timestamp("check_out_at", { withTimezone: true }),
   /** Visit note written at/after check-out. */
   visitNotes: text("visit_notes"),
+  /** Visit task checklist (spec §10.2): label + done/not_done/na + comment. */
+  tasks: jsonb("tasks")
+    .$type<{ label: string; status: string; comment?: string }[]>()
+    .notNull()
+    .default([]),
+  /** Approved billable minutes (spec §10.4); null until reviewed/auto-set. */
+  approvedMinutes: integer("approved_minutes"),
+  approvedBy: uuid("approved_by").references(() => users.id),
+  approvedAt: timestamp("approved_at", { withTimezone: true }),
   cancellationReason: text("cancellation_reason"),
   createdBy: uuid("created_by").references(() => users.id),
+  ...timestamps,
+});
+
+/** Incident/safety reports raised during home-care visits (spec §10.2). */
+export const careIncidents = pgTable("care_incidents", {
+  id: primaryId(),
+  organizationId: uuid("organization_id")
+    .notNull()
+    .references(() => organizations.id),
+  shiftId: uuid("shift_id").references(() => careShifts.id),
+  patientId: uuid("patient_id")
+    .notNull()
+    .references(() => patients.id),
+  caregiverId: uuid("caregiver_id").references(() => employees.id),
+  severity: careIncidentSeverityEnum("severity").notNull(),
+  description: text("description").notNull(),
+  reportedBy: uuid("reported_by").references(() => users.id),
+  resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+  resolutionNotes: text("resolution_notes"),
   ...timestamps,
 });

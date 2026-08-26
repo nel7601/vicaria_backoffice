@@ -185,6 +185,28 @@ export const careShiftStatusEnum = pgEnum("care_shift_status", [
   "confirmed",
   "in_progress",
   "completed",
+  "needs_review",
   "cancelled",
   "no_show",
+  "missed",
+]);
+
+export const serviceFamilyEnum = pgEnum("service_family", [
+  "clinic",
+  "coaching",
+  "home_care",
+]);
+
+export const billingUnitEnum = pgEnum("billing_unit", [
+  "fixed",
+  "per_unit",
+  "per_hour",
+  "per_session",
+]);
+
+export const careIncidentSeverityEnum = pgEnum("care_incident_severity", [
+  "low",
+  "medium",
+  "high",
+  "critical",
 ]);

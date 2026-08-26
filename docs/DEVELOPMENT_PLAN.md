@@ -98,3 +98,35 @@ D-01..D-10 must be resolved with Owner/legal/accounting before building the
 clinical and financial modules (D-01 PHIPA/PIPEDA scope, D-02 taxable services,
 D-03 invoice-of-record, D-06 insurance receipts, D-07 signature method). See
 `docs/adr/README.md` for how decisions feed ADRs.
+
+## 8. Alignment with the improved functional spec (v1.0, Aug 2026)
+
+`docs/ESPECIFICACION_FUNCIONAL_MEJORADA.md` supersedes the original brief as
+the product reference. Status of its deltas:
+
+**Implemented**
+- §3 Service catalog: `family` (clinic / coaching / home_care) and
+  `billing_unit` (fixed / per_unit / per_hour / per_session) on services,
+  editable in Settings, plus controlled categories and versioned prices.
+- §7.1/§8 Encounter lines: services actually performed with quantities;
+  invoices are generated from the signed encounter's lines
+  (`generateInvoiceFromEncounterAction`), not from the booking.
+- §10 Caregiver: care agreements (plan + default visit tasks), shifts with
+  task checklist (done / not done / n/a + comment), incident reports with
+  severity, clock-in/out with server timestamps, `needs_review` when actual
+  time deviates > 15 min from schedule, `missed` state, admin hour approval
+  (approved minutes ≠ scheduled), and one-click weekly invoice from approved
+  hours (`generateCareInvoiceAction`).
+- §13 Navigation: grouped sidebar (Vicaria Health / Vicaria Care / Shared);
+  month calendars for both service lines; Patients service-line column and
+  filters.
+
+**Next (not yet built)**
+- §9 Coaching packages UI: purchase, session balance, consumption on
+  completed session (schema `packages`/`package_enrollments` already exists).
+- §6 Form frequency rules (once / per visit / expiry) and blocking forms.
+- §12 Reminders/communication log; §13 role-specific dashboards ("what do I
+  have to do today"), caregiver mobile-first Today view.
+- §14 Reports: caregiver hours/exceptions, package balances, certification
+  expiry (needs team certifications, §4.1).
+- §10.4 Rounding rules and payroll export of approved hours.

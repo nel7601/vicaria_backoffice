@@ -94,6 +94,8 @@ export async function listAgreementShifts(
       checkInAt: careShifts.checkInAt,
       checkOutAt: careShifts.checkOutAt,
       visitNotes: careShifts.visitNotes,
+      tasks: careShifts.tasks,
+      approvedMinutes: careShifts.approvedMinutes,
       caregiverId: careShifts.caregiverId,
       caregiverFirst: employees.firstName,
       caregiverLast: employees.lastName,

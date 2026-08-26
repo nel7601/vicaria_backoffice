@@ -8,7 +8,10 @@ import { getDb } from "@/lib/db";
 import {
   appointments,
   encounterAmendments,
+  encounterLines,
   encounters,
+  invoiceItems,
+  invoices,
   observations,
 } from "@/lib/db/schema";
 import { getPrimaryOrganization } from "@/lib/db/queries/organization";
@@ -19,6 +22,7 @@ import {
   measurementSchema,
   saveDraftSchema,
 } from "@/lib/schemas/encounter";
+import { encounterLineSchema } from "@/lib/schemas/encounter-lines";
 import {
   canAmend,
   canSign,
@@ -356,4 +360,180 @@ export async function addMeasurementAction(
 
   revalidatePath(`/encounters/${encounterId}`);
   return { ok: true, encounterId };
+}
+
+/** Spec §7.1/§8: add a performed-service line (quantities) to a draft note. */
+export async function addEncounterLineAction(
+  encounterId: string,
+  raw: unknown,
+): Promise<EncounterResult> {
+  const user = await authorize("clinical_notes", "update");
+  const parsed = encounterLineSchema.safeParse(raw);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
+  }
+  const org = await getPrimaryOrganization();
+  if (!org) return { ok: false, error: "Organization not found." };
+
+  const loaded = await loadOwned(org.id, encounterId, user.authId);
+  if ("error" in loaded) return { ok: false, error: loaded.error };
+  if (loaded.row.status !== "draft") {
+    return { ok: false, error: "Lines can only be added to a draft." };
+  }
+
+  const data = parsed.data;
+  const net = data.quantity * data.unitPriceCents;
+  const lineTotal = net + Math.round((net * data.taxRateBps) / 10000);
+
+  const db = getDb();
+  const [created] = await db
+    .insert(encounterLines)
+    .values({
+      organizationId: org.id,
+      encounterId,
+      serviceId: data.serviceId || null,
+      description: data.description,
+      quantity: data.quantity,
+      unitPriceCents: data.unitPriceCents,
+      taxRateBps: data.taxRateBps,
+      lineTotalCents: lineTotal,
+    })
+    .returning();
+
+  await recordAudit({
+    organizationId: org.id,
+    actorUserId: user.authId,
+    action: "update",
+    entityType: "encounter_line",
+    entityId: created.id,
+    after: { encounterId, description: data.description, quantity: data.quantity },
+  });
+
+  revalidatePath(`/encounters/${encounterId}`);
+  return { ok: true, encounterId };
+}
+
+/** Remove a line from a draft note. */
+export async function removeEncounterLineAction(
+  encounterId: string,
+  lineId: string,
+): Promise<EncounterResult> {
+  const user = await authorize("clinical_notes", "update");
+  const org = await getPrimaryOrganization();
+  if (!org) return { ok: false, error: "Organization not found." };
+
+  const loaded = await loadOwned(org.id, encounterId, user.authId);
+  if ("error" in loaded) return { ok: false, error: loaded.error };
+  if (loaded.row.status !== "draft") {
+    return { ok: false, error: "Lines can only be removed from a draft." };
+  }
+
+  const db = getDb();
+  await db
+    .delete(encounterLines)
+    .where(
+      and(
+        eq(encounterLines.organizationId, org.id),
+        eq(encounterLines.encounterId, encounterId),
+        eq(encounterLines.id, lineId),
+      ),
+    );
+
+  await recordAudit({
+    organizationId: org.id,
+    actorUserId: user.authId,
+    action: "update",
+    entityType: "encounter_line",
+    entityId: lineId,
+    reason: "Line removed from draft encounter",
+  });
+
+  revalidatePath(`/encounters/${encounterId}`);
+  return { ok: true, encounterId };
+}
+
+/**
+ * Spec §7.1 key rule: the invoice originates from what was actually
+ * performed. Creates a draft invoice from the encounter's service lines.
+ */
+export async function generateInvoiceFromEncounterAction(
+  encounterId: string,
+): Promise<EncounterResult & { invoiceId?: string }> {
+  const user = await authorize("invoices_payments", "create");
+  const org = await getPrimaryOrganization();
+  if (!org) return { ok: false, error: "Organization not found." };
+
+  const db = getDb();
+  const [enc] = await db
+    .select({
+      id: encounters.id,
+      patientId: encounters.patientId,
+      status: encounters.status,
+    })
+    .from(encounters)
+    .where(
+      and(eq(encounters.organizationId, org.id), eq(encounters.id, encounterId)),
+    )
+    .limit(1);
+  if (!enc) return { ok: false, error: "Encounter not found." };
+  if (enc.status === "draft") {
+    return { ok: false, error: "Sign the encounter before invoicing it." };
+  }
+
+  const lines = await db
+    .select()
+    .from(encounterLines)
+    .where(eq(encounterLines.encounterId, encounterId));
+  if (lines.length === 0) {
+    return { ok: false, error: "The encounter has no service lines to invoice." };
+  }
+
+  const subtotal = lines.reduce(
+    (sum, l) => sum + l.quantity * l.unitPriceCents,
+    0,
+  );
+  const total = lines.reduce((sum, l) => sum + l.lineTotalCents, 0);
+  const tax = total - subtotal;
+
+  const [inv] = await db.transaction(async (tx) => {
+    const created = await tx
+      .insert(invoices)
+      .values({
+        organizationId: org.id,
+        patientId: enc.patientId,
+        status: "draft",
+        subtotalCents: subtotal,
+        taxCents: tax,
+        totalCents: total,
+        balanceCents: total,
+        currency: org.currency,
+      })
+      .returning();
+    for (const l of lines) {
+      await tx.insert(invoiceItems).values({
+        organizationId: org.id,
+        invoiceId: created[0].id,
+        description: l.description,
+        quantity: l.quantity,
+        unitPriceCents: l.unitPriceCents,
+        taxRateBps: l.taxRateBps,
+        lineTotalCents: l.lineTotalCents,
+        serviceId: l.serviceId,
+      });
+    }
+    return created;
+  });
+
+  await recordAudit({
+    organizationId: org.id,
+    actorUserId: user.authId,
+    action: "create",
+    entityType: "invoice",
+    entityId: inv.id,
+    after: { source: "encounter", encounterId, totalCents: total },
+  });
+
+  revalidatePath("/billing");
+  revalidatePath(`/encounters/${encounterId}`);
+  return { ok: true, encounterId, invoiceId: inv.id };
 }

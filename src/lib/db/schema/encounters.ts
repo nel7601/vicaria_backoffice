@@ -128,3 +128,25 @@ export const observations = pgTable("observations", {
   comment: text("comment"),
   ...timestamps,
 });
+
+/**
+ * encounter_lines — services actually performed with quantities (spec §7.1/§8:
+ * "the invoice must originate from what was really done"). Unit price is
+ * captured at entry time so later catalog changes never mutate history.
+ */
+export const encounterLines = pgTable("encounter_lines", {
+  id: primaryId(),
+  organizationId: uuid("organization_id")
+    .notNull()
+    .references(() => organizations.id),
+  encounterId: uuid("encounter_id")
+    .notNull()
+    .references(() => encounters.id),
+  serviceId: uuid("service_id").references(() => services.id),
+  description: varchar("description", { length: 300 }).notNull(),
+  quantity: integer("quantity").notNull().default(1),
+  unitPriceCents: integer("unit_price_cents").notNull().default(0),
+  taxRateBps: integer("tax_rate_bps").notNull().default(0),
+  lineTotalCents: integer("line_total_cents").notNull().default(0),
+  ...timestamps,
+});

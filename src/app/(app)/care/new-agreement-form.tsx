@@ -22,6 +22,9 @@ export function NewAgreementForm({
   const [rate, setRate] = useState("35");
   const [address, setAddress] = useState("");
   const [carePlan, setCarePlan] = useState("");
+  const [tasksText, setTasksText] = useState(
+    "Companionship, Meal preparation, Medication reminders",
+  );
 
   function submit() {
     setError(null);
@@ -34,6 +37,10 @@ export function NewAgreementForm({
         hourlyRateDollars: Number(rate || "0"),
         address,
         carePlan,
+        defaultTasks: tasksText
+          .split(",")
+          .map((t) => t.trim())
+          .filter(Boolean),
       });
       if (res.ok && res.id) {
         setOpen(false);
@@ -122,6 +129,18 @@ export function NewAgreementForm({
             value={address}
             onChange={(e) => setAddress(e.target.value)}
           />
+        </label>
+        <label className="flex flex-col gap-1 text-sm sm:col-span-3">
+          <span className="font-medium">Default visit tasks (comma-separated)</span>
+          <input
+            className={inputClass}
+            placeholder="Companionship, Meal preparation, Light housekeeping…"
+            value={tasksText}
+            onChange={(e) => setTasksText(e.target.value)}
+          />
+          <span className="text-xs text-muted">
+            Copied as a checklist onto every new shift.
+          </span>
         </label>
         <label className="flex flex-col gap-1 text-sm sm:col-span-3">
           <span className="font-medium">Care plan</span>

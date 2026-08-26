@@ -157,3 +157,22 @@ export async function resolveTemplateVersionForService(
   if (withVersion.length === 1) return withVersion[0].versionId;
   return null;
 }
+
+/** Performed-service lines of an encounter (spec §7.1/§8). */
+export async function listEncounterLines(
+  organizationId: string,
+  encounterId: string,
+) {
+  const db = getDb();
+  const { encounterLines } = await import("@/lib/db/schema");
+  return db
+    .select()
+    .from(encounterLines)
+    .where(
+      and(
+        eq(encounterLines.organizationId, organizationId),
+        eq(encounterLines.encounterId, encounterId),
+      ),
+    )
+    .orderBy(encounterLines.createdAt);
+}

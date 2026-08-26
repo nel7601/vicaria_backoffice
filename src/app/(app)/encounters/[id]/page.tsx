@@ -4,7 +4,8 @@ import { Card, CardTitle } from "@/components/ui/card";
 import { getSessionUser } from "@/lib/auth/session";
 import { can } from "@/lib/auth/rbac";
 import type { TemplateField } from "@/lib/domain/encounter";
-import { getEncounter } from "@/lib/db/queries/encounters";
+import { getEncounter, listEncounterLines } from "@/lib/db/queries/encounters";
+import { listServicesWithPrice } from "@/lib/db/queries/organization";
 import { getPatientById } from "@/lib/db/queries/patients";
 import { getPrimaryOrganization } from "@/lib/db/queries/organization";
 import { recordAccess } from "@/lib/audit/record";
@@ -12,6 +13,11 @@ import {
   EncounterWorkspace,
   type WorkspaceEncounter,
 } from "./encounter-workspace";
+import {
+  ServicesPerformed,
+  type LineRow,
+  type ServiceOption,
+} from "./services-performed";
 
 function extractFields(schema: unknown): TemplateField[] {
   if (Array.isArray(schema)) return schema as TemplateField[];
@@ -43,11 +49,22 @@ export default async function EncounterPage({
 
   let data: Awaited<ReturnType<typeof getEncounter>> = null;
   let patientName = "";
+  let lines: LineRow[] = [];
+  let serviceOptions: ServiceOption[] = [];
   let dbError: string | null = null;
   try {
     const org = await getPrimaryOrganization();
     if (org) {
       data = await getEncounter(org.id, id);
+      lines = (await listEncounterLines(org.id, id)) as LineRow[];
+      serviceOptions = (await listServicesWithPrice(org.id))
+        .filter((s) => s.isActive)
+        .map((s) => ({
+          id: s.id,
+          label: s.nameEn,
+          priceCents: s.priceCents ?? 0,
+          taxRateBps: s.taxRateBps ?? 0,
+        }));
       if (data) {
         const patient = await getPatientById(org.id, data.encounter.patientId);
         patientName = patient
@@ -129,6 +146,20 @@ export default async function EncounterPage({
             answers={(encounter.contentSnapshot ?? {}) as Record<string, unknown>}
           />
         )}
+      </Card>
+
+      <Card>
+        <CardTitle>Services performed</CardTitle>
+        <div className="mt-4">
+          <ServicesPerformed
+            encounterId={encounter.id}
+            status={encounter.status}
+            lines={lines}
+            services={serviceOptions}
+            canEditLines={canEdit && encounter.status === "draft"}
+            canInvoice={can(user.roles, "invoices_payments", "create")}
+          />
+        </div>
       </Card>
     </div>
   );

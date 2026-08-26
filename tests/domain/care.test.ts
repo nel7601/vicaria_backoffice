@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   canTransitionAgreement,
   canTransitionShift,
+  checkOutOutcome,
   findShiftConflicts,
   formatMinutes,
   isValidShiftRange,
@@ -37,12 +38,26 @@ describe("care shift lifecycle", () => {
     expect(canTransitionShift("completed", "scheduled")).toBe(false);
     expect(canTransitionShift("cancelled", "confirmed")).toBe(false);
     expect(canTransitionShift("no_show", "in_progress")).toBe(false);
+    expect(canTransitionShift("missed", "in_progress")).toBe(false);
   });
 
-  it("requires a reason for cancellation and no-show", () => {
+  it("routes check-out through needs_review and admin approval", () => {
+    expect(canTransitionShift("in_progress", "needs_review")).toBe(true);
+    expect(canTransitionShift("needs_review", "completed")).toBe(true);
+    expect(canTransitionShift("needs_review", "in_progress")).toBe(false);
+  });
+
+  it("requires a reason for cancellation, no-show and missed", () => {
     expect(shiftTransitionRequiresReason("cancelled")).toBe(true);
     expect(shiftTransitionRequiresReason("no_show")).toBe(true);
+    expect(shiftTransitionRequiresReason("missed")).toBe(true);
     expect(shiftTransitionRequiresReason("completed")).toBe(false);
+  });
+
+  it("flags check-outs beyond the tolerance for review", () => {
+    expect(checkOutOutcome(240, 250)).toBe("completed"); // within 15 min
+    expect(checkOutOutcome(240, 190)).toBe("needs_review"); // 50 min short
+    expect(checkOutOutcome(240, 300)).toBe("needs_review"); // 60 min over
   });
 });
 

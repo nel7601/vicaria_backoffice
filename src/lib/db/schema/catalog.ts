@@ -11,7 +11,9 @@ import {
 import { primaryId, timestamps } from "./_shared";
 import {
   appointmentModalityEnum,
+  billingUnitEnum,
   packageEnrollmentStatusEnum,
+  serviceFamilyEnum,
 } from "./enums";
 import { organizations } from "./organizations";
 import { patients } from "./patients";
@@ -48,6 +50,10 @@ export const services = pgTable("services", {
   nameEn: varchar("name_en", { length: 160 }).notNull(),
   nameEs: varchar("name_es", { length: 160 }).notNull(),
   category: varchar("category", { length: 80 }),
+  /** Service family (spec §3): drives documentation and billing behaviour. */
+  family: serviceFamilyEnum("family").notNull().default("clinic"),
+  /** How the service is charged (spec §3): fixed, per unit/lesion, hour, session. */
+  billingUnit: billingUnitEnum("billing_unit").notNull().default("fixed"),
   defaultDurationMinutes: integer("default_duration_minutes").notNull().default(60),
   modality: appointmentModalityEnum("modality").notNull().default("in_person"),
   accountingCode: varchar("accounting_code", { length: 40 }),

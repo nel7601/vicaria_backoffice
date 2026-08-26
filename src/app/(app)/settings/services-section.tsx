@@ -21,6 +21,8 @@ export interface ServiceRow {
   nameEn: string;
   nameEs: string;
   category: string | null;
+  family: string;
+  billingUnit: string;
   defaultDurationMinutes: number;
   isActive: boolean;
   priceCents: number | null;
@@ -31,6 +33,8 @@ interface FormState {
   nameEn: string;
   nameEs: string;
   category: string;
+  family: string;
+  billingUnit: string;
   duration: string;
   price: string;
   taxPct: string;
@@ -41,6 +45,8 @@ const EMPTY: FormState = {
   nameEn: "",
   nameEs: "",
   category: "",
+  family: "clinic",
+  billingUnit: "fixed",
   duration: "60",
   price: "",
   taxPct: "13",
@@ -52,6 +58,8 @@ function toForm(s: ServiceRow): FormState {
     nameEn: s.nameEn,
     nameEs: s.nameEs,
     category: s.category ?? "",
+    family: s.family,
+    billingUnit: s.billingUnit,
     duration: String(s.defaultDurationMinutes),
     price: s.priceCents !== null ? (s.priceCents / 100).toFixed(2) : "",
     taxPct: s.taxRateBps !== null ? (s.taxRateBps / 100).toString() : "0",
@@ -113,6 +121,8 @@ export function ServicesSection({
       nameEn: form.nameEn,
       nameEs: form.nameEs,
       category: form.category,
+      family: form.family,
+      billingUnit: form.billingUnit,
       defaultDurationMinutes: Number(form.duration),
       priceCents: Math.round(Number(form.price || "0") * 100),
       taxRateBps: Math.round(Number(form.taxPct || "0") * 100),
@@ -143,6 +153,8 @@ export function ServicesSection({
               <th className="py-2 pr-4">Service (EN)</th>
               <th className="py-2 pr-4">Servicio (ES)</th>
               <th className="py-2 pr-4">Category</th>
+              <th className="py-2 pr-4">Family</th>
+              <th className="py-2 pr-4">Unit</th>
               <th className="py-2 pr-4">Duration</th>
               <th className="py-2 pr-4">Price</th>
               <th className="py-2 pr-4">Tax</th>
@@ -153,7 +165,7 @@ export function ServicesSection({
           <tbody>
             {services.length === 0 && (
               <tr>
-                <td colSpan={canEdit ? 8 : 7} className="py-6 text-center text-muted">
+                <td colSpan={canEdit ? 10 : 9} className="py-6 text-center text-muted">
                   No services yet. Create the first one to use it in
                   appointments and invoices.
                 </td>
@@ -164,6 +176,22 @@ export function ServicesSection({
                 <td className="py-2 pr-4 font-medium">{s.nameEn}</td>
                 <td className="py-2 pr-4">{s.nameEs}</td>
                 <td className="py-2 pr-4 text-muted">{s.category ?? "—"}</td>
+                <td className="py-2 pr-4">
+                  <span
+                    className={`rounded-full px-2 py-0.5 text-xs ${
+                      s.family === "home_care"
+                        ? "bg-primary-soft text-primary-hover"
+                        : s.family === "coaching"
+                          ? "bg-warm text-foreground"
+                          : "bg-success-soft text-success"
+                    }`}
+                  >
+                    {s.family === "home_care" ? "home care" : s.family}
+                  </span>
+                </td>
+                <td className="py-2 pr-4 text-muted">
+                  {s.billingUnit.replace("_", " ")}
+                </td>
                 <td className="py-2 pr-4">{s.defaultDurationMinutes} min</td>
                 <td className="py-2 pr-4 tabular-nums">
                   {s.priceCents !== null ? formatCents(s.priceCents) : "—"}
@@ -250,6 +278,31 @@ export function ServicesSection({
                 Define categories in the Categories card above.
               </span>
             )}
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="font-medium">Family</span>
+            <select
+              className={inputClass}
+              value={form.family}
+              onChange={(e) => set("family", e.target.value)}
+            >
+              <option value="clinic">Clinic / Skin Treatment</option>
+              <option value="coaching">Health Coaching</option>
+              <option value="home_care">Home Care (Vicaria Care)</option>
+            </select>
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="font-medium">Billing unit</span>
+            <select
+              className={inputClass}
+              value={form.billingUnit}
+              onChange={(e) => set("billingUnit", e.target.value)}
+            >
+              <option value="fixed">Fixed price</option>
+              <option value="per_unit">Per unit / lesion</option>
+              <option value="per_hour">Per hour</option>
+              <option value="per_session">Per session</option>
+            </select>
           </label>
           <label className="flex flex-col gap-1 text-sm">
             <span className="font-medium">Duration (min)</span>

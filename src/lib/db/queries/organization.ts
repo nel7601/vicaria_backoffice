@@ -50,6 +50,8 @@ export async function listServicesWithPrice(organizationId: string) {
       nameEn: services.nameEn,
       nameEs: services.nameEs,
       category: services.category,
+      family: services.family,
+      billingUnit: services.billingUnit,
       defaultDurationMinutes: services.defaultDurationMinutes,
       isActive: services.isActive,
       priceCents: servicePrices.priceCents,

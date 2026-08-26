@@ -200,6 +200,8 @@ export async function createServiceAction(raw: unknown): Promise<ActionResult> {
         nameEn: data.nameEn,
         nameEs: data.nameEs,
         category: blankToNull(data.category),
+        family: data.family,
+        billingUnit: data.billingUnit,
         defaultDurationMinutes: data.defaultDurationMinutes,
         isActive: true,
       })
@@ -262,6 +264,8 @@ export async function updateServiceAction(
         nameEn: data.nameEn,
         nameEs: data.nameEs,
         category: blankToNull(data.category),
+        family: data.family,
+        billingUnit: data.billingUnit,
         defaultDurationMinutes: data.defaultDurationMinutes,
         isActive: data.isActive,
         updatedAt: new Date(),

@@ -22,6 +22,13 @@
       "when": 1787689755886,
       "tag": "0002_home_care",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1787754494865,
+      "tag": "0003_spec2_alignment",
+      "breakpoints": true
     }
   ]
 }

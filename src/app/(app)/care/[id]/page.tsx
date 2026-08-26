@@ -21,6 +21,7 @@ import {
   shiftDay,
 } from "@/lib/domain/timezone";
 import { AgreementStatusControls } from "./status-controls";
+import { GenerateInvoiceButton } from "./generate-invoice-button";
 import { ContactsSection, type ContactRow } from "./contacts-section";
 import { ShiftsSection, type ShiftRow } from "./shifts-section";
 
@@ -74,6 +75,7 @@ export default async function CareAgreementPage({
 
   const canEdit = can(roles, "home_care", "update");
   const canSchedule = can(roles, "home_care", "create");
+  const canInvoice = can(roles, "invoices_payments", "create");
 
   return (
     <div className="space-y-6">
@@ -138,6 +140,9 @@ export default async function CareAgreementPage({
             >
               This week
             </Link>
+            {canInvoice && (
+              <GenerateInvoiceButton agreementId={agreement.id} weekStart={weekStart} />
+            )}
           </div>
         </div>
 
@@ -179,6 +184,12 @@ export default async function CareAgreementPage({
                 checkInAt: s.checkInAt?.toISOString() ?? null,
                 checkOutAt: s.checkOutAt?.toISOString() ?? null,
                 visitNotes: s.visitNotes,
+                tasks: (s.tasks ?? []) as {
+                  label: string;
+                  status: string;
+                  comment?: string;
+                }[],
+                approvedMinutes: s.approvedMinutes,
                 caregiver: `${s.caregiverFirst} ${s.caregiverLast}`,
               }),
             )}

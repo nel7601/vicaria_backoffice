@@ -21,8 +21,10 @@ const STATUS_STYLE: Record<string, string> = {
   confirmed: "bg-primary-soft text-primary-hover",
   in_progress: "bg-primary-soft text-primary-hover",
   completed: "bg-success-soft text-success",
+  needs_review: "bg-ring/15 text-warning",
   cancelled: "bg-danger/10 text-danger line-through",
   no_show: "bg-danger/10 text-danger line-through",
+  missed: "bg-danger/10 text-danger line-through",
 };
 
 const STATUS_DOT: Record<string, string> = {
@@ -30,8 +32,10 @@ const STATUS_DOT: Record<string, string> = {
   confirmed: "bg-primary",
   in_progress: "bg-warning",
   completed: "bg-success",
+  needs_review: "bg-warning",
   cancelled: "bg-danger",
   no_show: "bg-danger",
+  missed: "bg-danger",
 };
 
 function fmtTime(d: Date) {
@@ -119,7 +123,7 @@ export default async function CareSchedulePage({
         minutes: 0,
       };
       entry.shifts.push(s);
-      if (!["cancelled", "no_show"].includes(s.status)) {
+      if (!["cancelled", "no_show", "missed"].includes(s.status)) {
         entry.minutes += shiftMinutes({ startAt: s.startAt, endAt: s.endAt });
       }
       byCaregiver.set(s.caregiverId, entry);
@@ -230,7 +234,7 @@ export default async function CareSchedulePage({
               time: fmtTime(s.startAt),
               label: `${s.patientFirst} ${s.patientLast} · ${s.caregiverFirst}`,
               dotClass: STATUS_DOT[s.status] ?? "bg-muted",
-              struck: ["cancelled", "no_show"].includes(s.status),
+              struck: ["cancelled", "no_show", "missed"].includes(s.status),
             }))}
           />
         )}
