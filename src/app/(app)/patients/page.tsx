@@ -7,12 +7,35 @@ import { getPrimaryOrganization } from "@/lib/db/queries/organization";
 import { getEmployeeIdForAuthUser } from "@/lib/db/queries/employee";
 import { listPatients } from "@/lib/db/queries/patients";
 
+const PATIENT_STATUSES = [
+  "prospect",
+  "active",
+  "inactive",
+  "blocked",
+  "deceased",
+] as const;
+
+const STATUS_STYLE: Record<string, string> = {
+  prospect: "bg-warm text-muted",
+  active: "bg-success-soft text-success",
+  inactive: "bg-border/60 text-muted",
+  blocked: "bg-danger/10 text-danger",
+  deceased: "bg-border/60 text-muted",
+};
+
 export default async function PatientsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string }>;
+  searchParams: Promise<{ q?: string; service?: string; status?: string }>;
 }) {
-  const { q } = await searchParams;
+  const { q, service: rawService, status: rawStatus } = await searchParams;
+  const service =
+    rawService === "clinic" || rawService === "care" ? rawService : undefined;
+  const status = (PATIENT_STATUSES as readonly string[]).includes(
+    rawStatus ?? "",
+  )
+    ? rawStatus
+    : undefined;
   const user = await getSessionUser();
   const roles = user?.roles ?? [];
 
@@ -43,6 +66,8 @@ export default async function PatientsPage({
         search: q,
         assignedEmployeeId,
         marketingOnly: scope === "limited" && roles.includes("marketing"),
+        service,
+        status,
       });
     }
   } catch (e) {
@@ -73,16 +98,42 @@ export default async function PatientsPage({
       </div>
 
       <Card>
-        <form method="get" className="mb-4 flex gap-2">
+        <form method="get" className="mb-4 flex flex-wrap items-center gap-2">
           <input
             name="q"
             defaultValue={q ?? ""}
             placeholder="Search name, email, phone, patient #"
-            className="w-full max-w-md rounded-md border border-border bg-surface px-3 py-2 text-sm"
+            className="w-full max-w-md rounded-lg border border-border bg-surface px-3 py-2 text-sm"
           />
+          <select
+            name="service"
+            defaultValue={service ?? ""}
+            className="rounded-lg border border-border bg-surface px-3 py-2 text-sm"
+          >
+            <option value="">All services</option>
+            <option value="clinic">Clinic (consultation)</option>
+            <option value="care">Home care</option>
+          </select>
+          <select
+            name="status"
+            defaultValue={status ?? ""}
+            className="rounded-lg border border-border bg-surface px-3 py-2 text-sm"
+          >
+            <option value="">All statuses</option>
+            {PATIENT_STATUSES.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
           <Button type="submit" variant="secondary">
-            Search
+            Filter
           </Button>
+          {(q || service || status) && (
+            <Link href="/patients" className="text-sm text-primary hover:underline">
+              Clear
+            </Link>
+          )}
         </form>
 
         {dbError && <p className="text-sm text-warning">{dbError}</p>}
@@ -96,13 +147,14 @@ export default async function PatientsPage({
                   <th className="py-2 pr-4">Name</th>
                   <th className="py-2 pr-4">Contact</th>
                   <th className="py-2 pr-4">Lang</th>
+                  <th className="py-2 pr-4">Service</th>
                   <th className="py-2 pr-4">Status</th>
                 </tr>
               </thead>
               <tbody>
                 {rows.length === 0 && (
                   <tr>
-                    <td colSpan={5} className="py-6 text-center text-muted">
+                    <td colSpan={6} className="py-6 text-center text-muted">
                       No patients found.
                     </td>
                   </tr>
@@ -124,7 +176,27 @@ export default async function PatientsPage({
                       {p.email || p.phoneE164 || "—"}
                     </td>
                     <td className="py-2 pr-4 uppercase">{p.preferredLanguage}</td>
-                    <td className="py-2 pr-4">{p.status}</td>
+                    <td className="py-2 pr-4">
+                      <span className="flex flex-wrap gap-1">
+                        {(p.hasClinic || !p.hasCare) && (
+                          <span className="rounded-full bg-success-soft px-2 py-0.5 text-xs text-success">
+                            Clinic
+                          </span>
+                        )}
+                        {p.hasCare && (
+                          <span className="rounded-full bg-primary-soft px-2 py-0.5 text-xs text-primary-hover">
+                            Home care
+                          </span>
+                        )}
+                      </span>
+                    </td>
+                    <td className="py-2 pr-4">
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-xs ${STATUS_STYLE[p.status] ?? ""}`}
+                      >
+                        {p.status}
+                      </span>
+                    </td>
                   </tr>
                 ))}
               </tbody>

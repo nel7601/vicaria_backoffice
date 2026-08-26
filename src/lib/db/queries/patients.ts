@@ -15,8 +15,26 @@ export interface ListPatientsParams {
   assignedEmployeeId?: string;
   /** Marketing scope: only opted-in patients. */
   marketingOnly?: boolean;
+  /**
+   * Service line filter: "care" = has a home-care agreement; "clinic" =
+   * has clinic activity (appointments/encounters) or no care agreement.
+   */
+  service?: "clinic" | "care";
+  status?: string;
   limit?: number;
 }
+
+/** EXISTS: patient has at least one home-care agreement. */
+const hasCareSql = sql<boolean>`EXISTS (
+  SELECT 1 FROM care_agreements ca WHERE ca.patient_id = ${patients.id}
+)`;
+
+/** EXISTS: patient has clinic activity (appointments or encounters). */
+const hasClinicSql = sql<boolean>`(EXISTS (
+  SELECT 1 FROM appointments ap WHERE ap.patient_id = ${patients.id}
+) OR EXISTS (
+  SELECT 1 FROM encounters en WHERE en.patient_id = ${patients.id}
+))`;
 
 export async function listPatients(params: ListPatientsParams) {
   const db = getDb();
@@ -40,6 +58,17 @@ export async function listPatients(params: ListPatientsParams) {
   if (params.marketingOnly) {
     conditions.push(eq(patients.marketingOptIn, true));
   }
+  if (params.status) {
+    conditions.push(
+      sql`${patients.status} = ${params.status}::patient_status`,
+    );
+  }
+  if (params.service === "care") {
+    conditions.push(sql`${hasCareSql}`);
+  } else if (params.service === "clinic") {
+    // Clinic = has clinic activity, or is not a home-care client at all.
+    conditions.push(sql`(${hasClinicSql} OR NOT ${hasCareSql})`);
+  }
 
   return db
     .select({
@@ -52,6 +81,8 @@ export async function listPatients(params: ListPatientsParams) {
       phoneE164: patients.phoneE164,
       status: patients.status,
       preferredLanguage: patients.preferredLanguage,
+      hasCare: hasCareSql,
+      hasClinic: hasClinicSql,
     })
     .from(patients)
     .where(and(...conditions))
