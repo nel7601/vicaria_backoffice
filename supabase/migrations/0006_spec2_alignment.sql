@@ -48,13 +48,6 @@ ALTER TABLE "care_incidents" ADD CONSTRAINT "care_incidents_patient_id_patients_
 ALTER TABLE "care_incidents" ADD CONSTRAINT "care_incidents_caregiver_id_employees_id_fk" FOREIGN KEY ("caregiver_id") REFERENCES "public"."employees"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "care_incidents" ADD CONSTRAINT "care_incidents_reported_by_users_id_fk" FOREIGN KEY ("reported_by") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "care_shifts" ADD CONSTRAINT "care_shifts_approved_by_users_id_fk" FOREIGN KEY ("approved_by") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
--- Missed shifts don't block caregiver time either.
-ALTER TABLE care_shifts DROP CONSTRAINT ex_care_shift_no_overlap;--> statement-breakpoint
-ALTER TABLE care_shifts ADD CONSTRAINT ex_care_shift_no_overlap
-  EXCLUDE USING gist (
-    caregiver_id WITH =,
-    tstzrange(start_at, end_at) WITH &&
-  ) WHERE (status NOT IN ('cancelled', 'no_show', 'missed'));--> statement-breakpoint
 CREATE INDEX idx_encounter_lines_encounter ON encounter_lines (encounter_id);--> statement-breakpoint
 CREATE INDEX idx_care_incidents_org_created ON care_incidents (organization_id, created_at);--> statement-breakpoint
 -- RLS: encounter lines follow the encounters access model.
