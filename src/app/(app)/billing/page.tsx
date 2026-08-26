@@ -80,8 +80,6 @@ export default async function BillingPage() {
         {canCreate && !dbError && <NewInvoiceForm patients={patients} />}
       </div>
 
-      {canCreate && !dbError && <RecordPaymentForm patients={patients} />}
-
       {dbError && (
         <Card>
           <p className="text-sm text-warning">{dbError}</p>
@@ -151,6 +149,8 @@ export default async function BillingPage() {
           </table>
         </div>
       </Card>
+
+      {canCreate && !dbError && <RecordPaymentForm patients={patients} />}
 
       {/* Recent payments */}
       <Card>
