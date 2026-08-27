@@ -2,14 +2,13 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import {
   canTransition,
   transitionRequiresReason,
   type AppointmentStatus,
 } from "@/lib/domain/appointment";
-import { changeAppointmentStatusAction } from "./actions";
-import { startEncounterFromAppointmentAction } from "../encounters/actions";
+import { changeAppointmentStatusAction } from "../actions";
+import { startEncounterFromAppointmentAction } from "../../encounters/actions";
 
 const ALL_STATUSES: AppointmentStatus[] = [
   "scheduled",
@@ -33,16 +32,10 @@ const STATUS_STYLE: Record<string, string> = {
   rescheduled: "bg-border text-muted",
 };
 
-export function AppointmentRow(props: {
+/** Status badge + quick actions for the appointment detail header. */
+export function AppointmentStatusActions(props: {
   id: string;
-  startAt: string;
-  endAt: string;
   status: string;
-  modality: string;
-  patientName: string;
-  patientId: string;
-  practitioner: string;
-  service: string | null;
   canUpdate: boolean;
   canStartEncounter: boolean;
 }) {
@@ -52,12 +45,6 @@ export function AppointmentRow(props: {
 
   const from = props.status as AppointmentStatus;
   const nextOptions = ALL_STATUSES.filter((s) => canTransition(from, s));
-
-  const time = new Date(props.startAt).toLocaleTimeString("en-CA", {
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZone: "America/Toronto",
-  });
 
   function changeStatus(to: AppointmentStatus) {
     setError(null);
@@ -93,30 +80,8 @@ export function AppointmentRow(props: {
     !["cancelled", "no_show", "rescheduled"].includes(props.status);
 
   return (
-    <li className="flex flex-wrap items-center justify-between gap-3 py-3">
-      <div className="min-w-0">
-        <div className="text-sm font-medium">
-          <span className="tabular-nums">{time}</span>{" "}
-          <Link
-            href={`/patients/${props.patientId}`}
-            className="text-primary hover:underline"
-          >
-            {props.patientName}
-          </Link>
-        </div>
-        <div className="text-xs text-muted">
-          {props.practitioner}
-          {props.service ? ` · ${props.service}` : ""} · {props.modality}
-        </div>
-        {error && <div className="text-xs text-danger">{error}</div>}
-      </div>
-      <div className="flex items-center gap-2">
-        <Link
-          href={`/calendar/${props.id}`}
-          className="rounded-md border border-border px-2 py-1 text-xs hover:bg-background"
-        >
-          View / edit
-        </Link>
+    <div className="flex flex-col items-end gap-1">
+      <div className="flex flex-wrap items-center gap-2">
         {encounterEligible && (
           <button
             onClick={startEncounter}
@@ -129,7 +94,7 @@ export function AppointmentRow(props: {
         <span
           className={`rounded-full px-2 py-0.5 text-xs ${STATUS_STYLE[props.status] ?? ""}`}
         >
-          {props.status}
+          {props.status.replace("_", " ")}
         </span>
         {props.canUpdate && nextOptions.length > 0 && (
           <select
@@ -143,15 +108,16 @@ export function AppointmentRow(props: {
             }}
             className="rounded-md border border-border bg-surface px-2 py-1 text-xs"
           >
-            <option value="">Change…</option>
+            <option value="">Change status…</option>
             {nextOptions.map((s) => (
               <option key={s} value={s}>
-                {s}
+                {s.replace("_", " ")}
               </option>
             ))}
           </select>
         )}
       </div>
-    </li>
+      {error && <p className="text-xs text-danger">{error}</p>}
+    </div>
   );
 }
