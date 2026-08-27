@@ -10,6 +10,7 @@ import {
 import { listPatients } from "@/lib/db/queries/patients";
 import { listActiveServices } from "@/lib/db/queries/catalog";
 import { MonthGrid } from "@/components/ui/month-grid";
+import { StatusLegend } from "@/components/ui/status-legend";
 import { NewAppointmentForm } from "./new-appointment-form";
 import { AppointmentRow } from "./appointment-row";
 import {
@@ -208,7 +209,17 @@ export default async function CalendarPage({
 
         {/* Month grid */}
         {!dbError && !isDayView && (
-          <MonthGrid
+          <>
+            <StatusLegend
+              items={[
+                { dotClass: "bg-primary", label: "Scheduled / Confirmed" },
+                { dotClass: "bg-warning", label: "Checked in / In progress" },
+                { dotClass: "bg-success", label: "Completed" },
+                { dotClass: "bg-danger", label: "Cancelled / No-show", struck: true },
+                { dotClass: "bg-muted", label: "Rescheduled", struck: true },
+              ]}
+            />
+            <MonthGrid
             monthStr={monthStr}
             todayStr={clinicDateString(new Date())}
             dayHref={(day) => `/calendar?date=${day}${empQuery}`}
@@ -225,7 +236,8 @@ export default async function CalendarPage({
               dotClass: STATUS_DOT[a.status] ?? "bg-muted",
               struck: ["cancelled", "no_show"].includes(a.status),
             }))}
-          />
+            />
+          </>
         )}
 
         {/* Day agenda */}

@@ -13,6 +13,7 @@ import {
   shiftMonth,
 } from "@/lib/domain/timezone";
 import { MonthGrid } from "@/components/ui/month-grid";
+import { StatusLegend } from "@/components/ui/status-legend";
 
 const TZ = "America/Toronto";
 
@@ -224,7 +225,20 @@ export default async function CareSchedulePage({
 
         {/* Month calendar of shifts */}
         {!dbError && !isDayView && (
-          <MonthGrid
+          <>
+            <StatusLegend
+              items={[
+                { dotClass: "bg-primary", label: "Scheduled / Confirmed" },
+                { dotClass: "bg-warning", label: "In progress / Needs review" },
+                { dotClass: "bg-success", label: "Completed" },
+                {
+                  dotClass: "bg-danger",
+                  label: "Cancelled / No-show / Missed",
+                  struck: true,
+                },
+              ]}
+            />
+            <MonthGrid
             monthStr={monthStr}
             todayStr={clinicDateString(new Date())}
             dayHref={(day) => `/care/schedule?date=${day}${cgQuery}`}
@@ -236,7 +250,8 @@ export default async function CareSchedulePage({
               dotClass: STATUS_DOT[s.status] ?? "bg-muted",
               struck: ["cancelled", "no_show", "missed"].includes(s.status),
             }))}
-          />
+            />
+          </>
         )}
 
         {/* Day board grouped by caregiver */}
