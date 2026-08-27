@@ -45,6 +45,8 @@ export function AppointmentRow(props: {
   service: string | null;
   canUpdate: boolean;
   canStartEncounter: boolean;
+  /** Hide the "View / edit" link (e.g. on the detail page itself). */
+  hideDetailLink?: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -111,6 +113,14 @@ export function AppointmentRow(props: {
         {error && <div className="text-xs text-danger">{error}</div>}
       </div>
       <div className="flex items-center gap-2">
+        {!props.hideDetailLink && (
+          <Link
+            href={`/calendar/${props.id}`}
+            className="rounded-md border border-border px-2 py-1 text-xs hover:bg-background"
+          >
+            View / edit
+          </Link>
+        )}
         {encounterEligible && (
           <button
             onClick={startEncounter}

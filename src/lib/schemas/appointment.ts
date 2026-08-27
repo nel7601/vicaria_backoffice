@@ -35,6 +35,23 @@ export const createAppointmentSchema = z
 
 export type CreateAppointmentInput = z.infer<typeof createAppointmentSchema>;
 
+/** Editing an appointment while it is still upcoming (spec §7). */
+export const updateAppointmentSchema = z
+  .object({
+    serviceId: z.string().uuid().optional().or(z.literal("")),
+    employeeId: z.string().uuid(),
+    startAt: z.string().datetime(),
+    endAt: z.string().datetime(),
+    modality: appointmentModality,
+    notesAdmin: z.string().max(2000).optional().or(z.literal("")),
+  })
+  .refine((v) => new Date(v.endAt) > new Date(v.startAt), {
+    message: "End must be after start",
+    path: ["endAt"],
+  });
+
+export type UpdateAppointmentInput = z.infer<typeof updateAppointmentSchema>;
+
 export const changeStatusSchema = z.object({
   status: appointmentStatus,
   reason: z.string().max(500).optional(),

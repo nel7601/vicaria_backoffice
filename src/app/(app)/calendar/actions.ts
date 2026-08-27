@@ -11,6 +11,7 @@ import { employeeAppointmentsInWindow } from "@/lib/db/queries/appointments";
 import {
   changeStatusSchema,
   createAppointmentSchema,
+  updateAppointmentSchema,
 } from "@/lib/schemas/appointment";
 import {
   canTransition,
@@ -178,5 +179,108 @@ export async function changeAppointmentStatusAction(
   });
 
   revalidatePath("/calendar");
+  return { ok: true, appointmentId };
+}
+
+/**
+ * Edit an upcoming appointment (practitioner, service, time, modality,
+ * notes). Allowed while scheduled/confirmed/checked_in; completed or dead
+ * appointments are immutable history. Re-runs conflict detection excluding
+ * the appointment itself.
+ */
+export async function updateAppointmentAction(
+  appointmentId: string,
+  raw: unknown,
+): Promise<AppointmentResult> {
+  const user = await authorize("patients_demographic", "update");
+  const parsed = updateAppointmentSchema.safeParse(raw);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
+  }
+  const org = await getPrimaryOrganization();
+  if (!org) return { ok: false, error: "Organization not found." };
+
+  const db = getDb();
+  const [current] = await db
+    .select()
+    .from(appointments)
+    .where(
+      and(
+        eq(appointments.organizationId, org.id),
+        eq(appointments.id, appointmentId),
+      ),
+    )
+    .limit(1);
+  if (!current) return { ok: false, error: "Appointment not found." };
+  if (!["scheduled", "confirmed", "checked_in"].includes(current.status)) {
+    return {
+      ok: false,
+      error: "Only upcoming appointments can be edited.",
+    };
+  }
+
+  const data = parsed.data;
+  const start = new Date(data.startAt);
+  const end = new Date(data.endAt);
+
+  const existing = await employeeAppointmentsInWindow(
+    org.id,
+    data.employeeId,
+    start,
+    end,
+    appointmentId,
+  );
+  const conflicts = findConflicts(
+    { startAt: start, endAt: end },
+    existing.map((e) => ({
+      id: e.id,
+      startAt: e.startAt,
+      endAt: e.endAt,
+      status: e.status as AppointmentStatus,
+    })),
+  );
+  if (conflicts.length > 0) {
+    return {
+      ok: false,
+      error: "The practitioner has a conflicting appointment in this window.",
+      conflicts: conflicts.length,
+    };
+  }
+
+  await db
+    .update(appointments)
+    .set({
+      employeeId: data.employeeId,
+      serviceId: data.serviceId || null,
+      startAt: start,
+      endAt: end,
+      modality: data.modality,
+      notesAdmin: data.notesAdmin || null,
+      updatedAt: new Date(),
+    })
+    .where(eq(appointments.id, appointmentId));
+
+  await recordAudit({
+    organizationId: org.id,
+    actorUserId: user.authId,
+    action: "update",
+    entityType: "appointment",
+    entityId: appointmentId,
+    before: {
+      employeeId: current.employeeId,
+      start: current.startAt.toISOString(),
+      end: current.endAt.toISOString(),
+      serviceId: current.serviceId,
+    },
+    after: {
+      employeeId: data.employeeId,
+      start: data.startAt,
+      end: data.endAt,
+      serviceId: data.serviceId || null,
+    },
+  });
+
+  revalidatePath("/calendar");
+  revalidatePath(`/calendar/${appointmentId}`);
   return { ok: true, appointmentId };
 }
