@@ -17,7 +17,6 @@ import {
 } from "@/lib/db/schema";
 import { getPrimaryOrganization } from "@/lib/db/queries/organization";
 import {
-  confirmedAllocatedCents,
   paymentAllocatedCents,
   paymentRefundedCents,
 } from "@/lib/db/queries/billing";
@@ -50,7 +49,12 @@ export interface BillingResult {
 type Db = ReturnType<typeof getDb>;
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
-/** Recompute paid/balance/status of an invoice from confirmed allocations. */
+/**
+ * Recompute paid/balance/status of an invoice from confirmed allocations.
+ * IMPORTANT: the allocation sum must run on the SAME executor (`db`) — when
+ * called inside a transaction, a separate pooled connection cannot see the
+ * uncommitted allocation rows and would compute a stale total.
+ */
 async function recomputeInvoice(
   db: Db | Tx,
   organizationId: string,
@@ -65,7 +69,20 @@ async function recomputeInvoice(
     .limit(1);
   if (!inv) return;
 
-  const allocated = await confirmedAllocatedCents(invoiceId);
+  const { sql } = await import("drizzle-orm");
+  const [row] = await db
+    .select({
+      total: sql<number>`coalesce(sum(${paymentAllocations.amountCents}), 0)::int`,
+    })
+    .from(paymentAllocations)
+    .innerJoin(payments, eq(payments.id, paymentAllocations.paymentId))
+    .where(
+      and(
+        eq(paymentAllocations.invoiceId, invoiceId),
+        eq(payments.status, "confirmed"),
+      ),
+    );
+  const allocated = Number(row?.total ?? 0);
   const status = deriveInvoiceStatus({
     issued: inv.invoiceNumber !== null,
     voided: inv.status === "void",
