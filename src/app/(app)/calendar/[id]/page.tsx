@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { Card, CardTitle } from "@/components/ui/card";
+import { RecordLink } from "@/components/ui/record-link";
 import { getSessionUser } from "@/lib/auth/session";
 import { can } from "@/lib/auth/rbac";
 import { getPrimaryOrganization } from "@/lib/db/queries/organization";
@@ -111,6 +112,7 @@ export default async function AppointmentDetailPage({
               >
                 {a.patientFirst} {a.patientLast}
               </Link>{" "}
+              <RecordLink patientId={a.patientId} />{" "}
               <span className="text-xs text-muted">{a.patientNumber}</span>
             </dd>
           </div>

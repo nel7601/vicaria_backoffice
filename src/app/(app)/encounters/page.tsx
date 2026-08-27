@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Card, CardTitle } from "@/components/ui/card";
+import { RecordLink } from "@/components/ui/record-link";
 import { getSessionUser } from "@/lib/auth/session";
 import { can } from "@/lib/auth/rbac";
 import { getPrimaryOrganization } from "@/lib/db/queries/organization";
@@ -114,12 +115,15 @@ export default async function EncountersPage({
             {rows.map((e) => (
               <li key={e.id} className="flex items-center justify-between py-3">
                 <div>
-                  <Link
-                    href={`/encounters/${e.id}`}
-                    className="font-medium text-primary hover:underline"
-                  >
-                    {e.patientFirst} {e.patientLast}
-                  </Link>
+                  <span className="flex items-center gap-1.5">
+                    <Link
+                      href={`/encounters/${e.id}`}
+                      className="font-medium text-primary hover:underline"
+                    >
+                      {e.patientFirst} {e.patientLast}
+                    </Link>
+                    <RecordLink patientId={e.patientId} />
+                  </span>
                   <div className="text-xs text-muted">
                     {e.practitionerFirst} {e.practitionerLast}
                     {e.startedAt

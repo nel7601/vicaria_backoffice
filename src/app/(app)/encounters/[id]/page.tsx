@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { Card, CardTitle } from "@/components/ui/card";
+import { RecordLink } from "@/components/ui/record-link";
 import { getSessionUser } from "@/lib/auth/session";
 import { can } from "@/lib/auth/rbac";
 import type { TemplateField } from "@/lib/domain/encounter";
@@ -112,8 +113,9 @@ export default async function EncounterPage({
         <Link href="/encounters" className="text-sm text-primary hover:underline">
           ← Encounters
         </Link>
-        <h1 className="mt-1 text-xl font-semibold">
+        <h1 className="mt-1 flex items-center gap-2 text-xl font-semibold">
           Encounter{patientName ? ` — ${patientName}` : ""}
+          <RecordLink patientId={encounter.patientId} />
         </h1>
         <p className="text-sm text-muted">
           {encounter.status}

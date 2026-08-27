@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { RecordLink } from "@/components/ui/record-link";
 import {
   canTransition,
   transitionRequiresReason,
@@ -102,7 +103,8 @@ export function AppointmentRow(props: {
             className="text-primary hover:underline"
           >
             {props.patientName}
-          </Link>
+          </Link>{" "}
+          <RecordLink patientId={props.patientId} />
         </div>
         <div className="text-xs text-muted">
           {props.practitioner}

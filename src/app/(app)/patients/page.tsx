@@ -7,6 +7,7 @@ import { getPrimaryOrganization } from "@/lib/db/queries/organization";
 import { getEmployeeIdForAuthUser } from "@/lib/db/queries/employee";
 import { listPatientsPaged } from "@/lib/db/queries/patients";
 import { Pager } from "@/components/ui/pager";
+import { RecordLink } from "@/components/ui/record-link";
 
 const PATIENT_STATUSES = [
   "prospect",
@@ -185,12 +186,15 @@ export default async function PatientsPage({
                       {p.patientNumber}
                     </td>
                     <td className="py-2 pr-4">
-                      <Link
-                        href={`/patients/${p.id}`}
-                        className="font-medium text-primary hover:underline"
-                      >
-                        {p.preferredName || p.legalFirstName} {p.legalLastName}
-                      </Link>
+                      <span className="flex items-center gap-1.5">
+                        <Link
+                          href={`/patients/${p.id}`}
+                          className="font-medium text-primary hover:underline"
+                        >
+                          {p.preferredName || p.legalFirstName} {p.legalLastName}
+                        </Link>
+                        <RecordLink patientId={p.id} />
+                      </span>
                     </td>
                     <td className="py-2 pr-4 text-muted">
                       {p.email || p.phoneE164 || "—"}

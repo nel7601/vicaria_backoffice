@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { Card, CardTitle } from "@/components/ui/card";
+import { RecordLink } from "@/components/ui/record-link";
 import { getSessionUser } from "@/lib/auth/session";
 import { can } from "@/lib/auth/rbac";
 import { formatCents } from "@/lib/domain/money";
@@ -87,11 +88,14 @@ export default async function InvoiceDetailPage({
         <h1 className="mt-1 text-xl font-semibold">
           {invoice.invoiceNumber ?? "Pre-invoice (draft)"}
         </h1>
-        <p className="text-sm text-muted">
+        <p className="flex items-center gap-1.5 text-sm text-muted">
           {patient
             ? `${patient.preferredName || patient.legalFirstName} ${patient.legalLastName}`
-            : ""}{" "}
-          · {invoice.status} · {invoice.language.toUpperCase()}
+            : ""}
+          {patient && <RecordLink patientId={patient.id} />}
+          <span>
+            · {invoice.status} · {invoice.language.toUpperCase()}
+          </span>
         </p>
       </div>
 

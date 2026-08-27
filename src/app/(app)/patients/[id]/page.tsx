@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { Card, CardTitle } from "@/components/ui/card";
+import { RecordLink } from "@/components/ui/record-link";
 import { getSessionUser } from "@/lib/auth/session";
 import { can } from "@/lib/auth/rbac";
 import { formatCents } from "@/lib/domain/money";
@@ -83,9 +84,10 @@ export default async function Patient360Page({
           <Link href="/patients" className="text-sm text-primary hover:underline">
             ← Patients
           </Link>
-          <h1 className="mt-1 text-xl font-semibold">
+          <h1 className="mt-1 flex items-center gap-2 text-xl font-semibold">
             {patient.preferredName || patient.legalFirstName}{" "}
             {patient.legalLastName}
+            <RecordLink patientId={patient.id} />
           </h1>
           <p className="text-sm text-muted">
             {patient.patientNumber} · {patient.preferredLanguage.toUpperCase()}

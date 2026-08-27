@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Card, CardTitle } from "@/components/ui/card";
+import { RecordLink } from "@/components/ui/record-link";
 import { getSessionUser } from "@/lib/auth/session";
 import { can } from "@/lib/auth/rbac";
 import { getPrimaryOrganization } from "@/lib/db/queries/organization";
@@ -92,13 +93,18 @@ export default async function CarePage() {
                 {agreements.map((a) => (
                   <tr key={a.id} className="border-b border-border/60">
                     <td className="py-2.5 pr-4">
-                      <Link
-                        href={`/care/${a.id}`}
-                        className="font-medium text-primary hover:underline"
-                      >
-                        {a.patientFirst} {a.patientLast}
-                      </Link>{" "}
-                      <span className="text-xs text-muted">{a.patientNumber}</span>
+                      <span className="flex items-center gap-1.5">
+                        <Link
+                          href={`/care/${a.id}`}
+                          className="font-medium text-primary hover:underline"
+                        >
+                          {a.patientFirst} {a.patientLast}
+                        </Link>
+                        <RecordLink patientId={a.patientId} />
+                        <span className="text-xs text-muted">
+                          {a.patientNumber}
+                        </span>
+                      </span>
                     </td>
                     <td className="py-2.5 pr-4">{formatMinutes(a.weeklyMinutes)}</td>
                     <td className="py-2.5 pr-4 text-muted">

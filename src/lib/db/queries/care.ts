@@ -141,6 +141,7 @@ export async function listShiftsInWindow(params: {
       caregiverLast: employees.lastName,
       patientFirst: patients.legalFirstName,
       patientLast: patients.legalLastName,
+      patientId: careShifts.patientId,
     })
     .from(careShifts)
     .innerJoin(employees, eq(employees.id, careShifts.caregiverId))

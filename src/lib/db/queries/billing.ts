@@ -319,6 +319,7 @@ export async function listPaymentsPaged(params: PagedPaymentsParams) {
       reference: payments.reference,
       patientFirst: patients.legalFirstName,
       patientLast: patients.legalLastName,
+      patientId: payments.patientId,
     })
     .from(payments)
     .innerJoin(patients, eq(patients.id, payments.patientId))

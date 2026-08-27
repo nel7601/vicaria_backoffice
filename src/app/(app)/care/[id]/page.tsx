@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Card, CardTitle } from "@/components/ui/card";
+import { RecordLink } from "@/components/ui/record-link";
 import { getSessionUser } from "@/lib/auth/session";
 import { can } from "@/lib/auth/rbac";
 import { getPrimaryOrganization } from "@/lib/db/queries/organization";
@@ -86,8 +87,9 @@ export default async function CareAgreementPage({
               ← Home care
             </Link>
           </div>
-          <h1 className="mt-1 text-xl font-semibold">
+          <h1 className="mt-1 flex items-center gap-2 text-xl font-semibold">
             {agreement.patientFirst} {agreement.patientLast}
+            <RecordLink patientId={agreement.patientId} />
           </h1>
           <p className="text-sm text-muted">
             {agreement.patientNumber} · {formatMinutes(agreement.weeklyMinutes)}

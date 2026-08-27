@@ -18,7 +18,7 @@ import {
 import { encounters } from "./encounters";
 import { organizations } from "./organizations";
 import { patients } from "./patients";
-import { employees } from "./users";
+import { employees, users } from "./users";
 
 /**
  * treatment_plans + goals — coaching/treatment planning (§FR-PLAN-001/002).
@@ -54,6 +54,27 @@ export const treatmentGoals = pgTable("treatment_goals", {
   status: goalStatusEnum("status").notNull().default("not_started"),
   targetDate: timestamp("target_date", { withTimezone: true, mode: "date" }),
   lastProgressAt: timestamp("last_progress_at", { withTimezone: true, mode: "date" }),
+  ...timestamps,
+});
+
+/**
+ * patient_chart_notes — free-text notes a clinician adds to the clinical
+ * record outside an encounter (e.g. a follow-up phone call). They appear
+ * chronologically in the record's Evolution tab.
+ */
+export const patientChartNotes = pgTable("patient_chart_notes", {
+  id: primaryId(),
+  organizationId: uuid("organization_id")
+    .notNull()
+    .references(() => organizations.id),
+  patientId: uuid("patient_id")
+    .notNull()
+    .references(() => patients.id),
+  authorUserId: uuid("author_user_id").references(() => users.id),
+  notedAt: timestamp("noted_at", { withTimezone: true, mode: "date" })
+    .notNull()
+    .defaultNow(),
+  body: text("body").notNull(),
   ...timestamps,
 });
 

@@ -18,3 +18,12 @@ export const createTaskSchema = z.object({
 });
 
 export type CreateTaskInput = z.infer<typeof createTaskSchema>;
+
+/** Chart note added to the clinical record outside an encounter. */
+export const addChartNoteSchema = z.object({
+  patientId: z.string().uuid(),
+  notedAt: z.string().date(),
+  body: z.string().trim().min(1, "Required").max(5000),
+});
+
+export type AddChartNoteInput = z.infer<typeof addChartNoteSchema>;

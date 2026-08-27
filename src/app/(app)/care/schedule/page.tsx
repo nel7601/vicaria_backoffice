@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Card, CardTitle } from "@/components/ui/card";
+import { RecordLink } from "@/components/ui/record-link";
 import { getSessionUser } from "@/lib/auth/session";
 import { can } from "@/lib/auth/rbac";
 import { getPrimaryOrganization } from "@/lib/db/queries/organization";
@@ -287,7 +288,8 @@ export default async function CareSchedulePage({
                             className="text-primary hover:underline"
                           >
                             {s.patientFirst} {s.patientLast}
-                          </Link>
+                          </Link>{" "}
+                          <RecordLink patientId={s.patientId} />
                         </div>
                         <span
                           className={`rounded-full px-2 py-0.5 text-xs ${STATUS_STYLE[s.status] ?? ""}`}
