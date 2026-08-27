@@ -7,7 +7,7 @@ import { validateAnswers } from "@/lib/domain/encounter";
 import { Button } from "@/components/ui/button";
 import { Field, inputClass } from "@/components/ui/field";
 import { TemplateFieldInput } from "@/components/forms/template-field-input";
-import { updatePatientFormAction } from "./actions";
+import { deletePatientFormAction, updatePatientFormAction } from "./actions";
 
 function answerText(value: unknown): string {
   if (value === null || value === undefined || value === "") return "—";
@@ -56,6 +56,19 @@ export function EditableFormEntry({
     setError(null);
   }
 
+  function remove() {
+    const reason = window.prompt(
+      "Delete this filled form? This cannot be undone.\nReason for deletion:",
+    );
+    if (!reason?.trim()) return;
+    setError(null);
+    startTransition(async () => {
+      const res = await deletePatientFormAction(formId, reason);
+      if (res.ok) router.refresh();
+      else setError(res.error ?? "Could not delete the form.");
+    });
+  }
+
   function save() {
     setError(null);
     const v = validateAnswers({ fields }, answers);
@@ -101,15 +114,26 @@ export function EditableFormEntry({
             filled directly
           </span>
           {canEdit && !editing && (
-            <button
-              onClick={() => setEditing(true)}
-              className="rounded-md border border-border px-2 py-1 text-xs hover:bg-background"
-            >
-              Edit
-            </button>
+            <>
+              <button
+                onClick={() => setEditing(true)}
+                className="rounded-md border border-border px-2 py-1 text-xs hover:bg-background"
+              >
+                Edit
+              </button>
+              <button
+                onClick={remove}
+                disabled={pending}
+                className="rounded-md border border-danger/40 px-2 py-1 text-xs text-danger hover:bg-danger/10"
+              >
+                Delete
+              </button>
+            </>
           )}
         </div>
       </div>
+
+      {!editing && error && <p className="mt-2 text-sm text-danger">{error}</p>}
 
       {editing ? (
         <div className="mt-3 space-y-4">

@@ -199,3 +199,53 @@ export async function updatePatientFormAction(
   revalidatePath(`/patients/${existing.patientId}/record`);
   return { ok: true };
 }
+
+/**
+ * Delete a form filled by mistake. Requires a reason (audited as a sensitive
+ * action with the full answers preserved in the audit trail). Only
+ * directly-filled forms can be deleted — encounter notes are immutable.
+ */
+export async function deletePatientFormAction(
+  formId: string,
+  reason: string,
+): Promise<SimpleResult> {
+  const user = await authorize("clinical_notes", "update");
+  const trimmed = reason?.trim();
+  if (!trimmed) return { ok: false, error: "A reason is required to delete a form." };
+
+  const org = await getPrimaryOrganization();
+  if (!org) return { ok: false, error: "Organization not found." };
+
+  const db = getDb();
+  const [existing] = await db
+    .select({
+      id: patientForms.id,
+      patientId: patientForms.patientId,
+      templateVersionId: patientForms.templateVersionId,
+      answers: patientForms.answers,
+      filledAt: patientForms.filledAt,
+      filledBy: patientForms.filledBy,
+    })
+    .from(patientForms)
+    .where(
+      and(eq(patientForms.organizationId, org.id), eq(patientForms.id, formId)),
+    )
+    .limit(1);
+  if (!existing) return { ok: false, error: "Form not found." };
+
+  // Audit first so a delete is never unrecorded (§12.2).
+  await recordAudit({
+    organizationId: org.id,
+    actorUserId: user.authId,
+    action: "delete",
+    entityType: "patient_form",
+    entityId: formId,
+    reason: trimmed,
+    before: existing,
+  });
+
+  await db.delete(patientForms).where(eq(patientForms.id, formId));
+
+  revalidatePath(`/patients/${existing.patientId}/record`);
+  return { ok: true };
+}
