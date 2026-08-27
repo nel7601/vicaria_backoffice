@@ -5,7 +5,8 @@ import { getSessionUser } from "@/lib/auth/session";
 import { can, readScopeFor } from "@/lib/auth/rbac";
 import { getPrimaryOrganization } from "@/lib/db/queries/organization";
 import { getEmployeeIdForAuthUser } from "@/lib/db/queries/employee";
-import { listPatients } from "@/lib/db/queries/patients";
+import { listPatientsPaged } from "@/lib/db/queries/patients";
+import { Pager } from "@/components/ui/pager";
 
 const PATIENT_STATUSES = [
   "prospect",
@@ -23,12 +24,26 @@ const STATUS_STYLE: Record<string, string> = {
   deceased: "bg-border/60 text-muted",
 };
 
+const PAGE_SIZE = 15;
+
 export default async function PatientsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; service?: string; status?: string }>;
+  searchParams: Promise<{
+    q?: string;
+    service?: string;
+    status?: string;
+    page?: string;
+  }>;
 }) {
-  const { q, service: rawService, status: rawStatus } = await searchParams;
+  const {
+    q,
+    service: rawService,
+    status: rawStatus,
+    page: rawPage,
+  } = await searchParams;
+  const pageNum = Number(rawPage);
+  const page = Number.isInteger(pageNum) && pageNum > 0 ? pageNum : 1;
   const service =
     rawService === "clinic" || rawService === "care" ? rawService : undefined;
   const status = (PATIENT_STATUSES as readonly string[]).includes(
@@ -49,7 +64,8 @@ export default async function PatientsPage({
   }
 
   const scope = readScopeFor(roles, "patients_demographic");
-  let rows: Awaited<ReturnType<typeof listPatients>> = [];
+  let rows: Awaited<ReturnType<typeof listPatientsPaged>>["rows"] = [];
+  let total = 0;
   let dbError: string | null = null;
 
   try {
@@ -61,14 +77,18 @@ export default async function PatientsPage({
         // Fail safe: a practitioner with no employee mapping sees nobody.
         assignedEmployeeId = empId ?? "00000000-0000-0000-0000-000000000000";
       }
-      rows = await listPatients({
+      const res = await listPatientsPaged({
         organizationId: org.id,
         search: q,
         assignedEmployeeId,
         marketingOnly: scope === "limited" && roles.includes("marketing"),
         service,
         status,
+        page,
+        pageSize: PAGE_SIZE,
       });
+      rows = res.rows;
+      total = res.total;
     }
   } catch (e) {
     dbError = "Database not reachable. Configure DATABASE_URL and run migrations.";
@@ -201,6 +221,20 @@ export default async function PatientsPage({
                 ))}
               </tbody>
             </table>
+            <Pager
+              page={page}
+              total={total}
+              pageSize={PAGE_SIZE}
+              hrefFor={(p) => {
+                const sp = new URLSearchParams();
+                if (q) sp.set("q", q);
+                if (service) sp.set("service", service);
+                if (status) sp.set("status", status);
+                if (p > 1) sp.set("page", String(p));
+                const str = sp.toString();
+                return `/patients${str ? `?${str}` : ""}`;
+              }}
+            />
           </div>
         )}
       </Card>

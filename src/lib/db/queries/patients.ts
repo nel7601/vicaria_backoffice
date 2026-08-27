@@ -1,4 +1,4 @@
-import { and, desc, eq, ilike, or, sql } from "drizzle-orm";
+import { and, count, desc, eq, ilike, or, sql } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import {
   appointments,
@@ -36,8 +36,9 @@ const hasClinicSql = sql<boolean>`(EXISTS (
   SELECT 1 FROM encounters en WHERE en.patient_id = ${patients.id}
 ))`;
 
-export async function listPatients(params: ListPatientsParams) {
-  const db = getDb();
+function buildPatientConditions(
+  params: Omit<ListPatientsParams, "limit">,
+) {
   const conditions = [eq(patients.organizationId, params.organizationId)];
 
   if (params.search && params.search.trim().length > 0) {
@@ -70,6 +71,13 @@ export async function listPatients(params: ListPatientsParams) {
     conditions.push(sql`(${hasClinicSql} OR NOT ${hasCareSql})`);
   }
 
+  return conditions;
+}
+
+export async function listPatients(params: ListPatientsParams) {
+  const db = getDb();
+  const conditions = buildPatientConditions(params);
+
   return db
     .select({
       id: patients.id,
@@ -88,6 +96,41 @@ export async function listPatients(params: ListPatientsParams) {
     .where(and(...conditions))
     .orderBy(desc(patients.createdAt))
     .limit(params.limit ?? 50);
+}
+
+/** Paginated variant of listPatients with a total count for the pager. */
+export async function listPatientsPaged(
+  params: Omit<ListPatientsParams, "limit"> & { page: number; pageSize: number },
+) {
+  const db = getDb();
+  const conditions = buildPatientConditions(params);
+
+  const [{ n: total }] = await db
+    .select({ n: count() })
+    .from(patients)
+    .where(and(...conditions));
+
+  const rows = await db
+    .select({
+      id: patients.id,
+      patientNumber: patients.patientNumber,
+      legalFirstName: patients.legalFirstName,
+      legalLastName: patients.legalLastName,
+      preferredName: patients.preferredName,
+      email: patients.email,
+      phoneE164: patients.phoneE164,
+      status: patients.status,
+      preferredLanguage: patients.preferredLanguage,
+      hasCare: hasCareSql,
+      hasClinic: hasClinicSql,
+    })
+    .from(patients)
+    .where(and(...conditions))
+    .orderBy(desc(patients.createdAt))
+    .limit(params.pageSize)
+    .offset((params.page - 1) * params.pageSize);
+
+  return { rows, total: Number(total ?? 0) };
 }
 
 export async function getPatientById(organizationId: string, id: string) {
