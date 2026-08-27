@@ -2,9 +2,13 @@ import { describe, expect, it } from "vitest";
 import {
   computeSquareSignature,
   extractSquarePaymentFromEvent,
+  extractTerminalCheckoutFromEvent,
   isSquarePaymentEvent,
+  isSquareTerminalEvent,
   mapSquarePaymentStatus,
+  mapTerminalCheckoutStatus,
   normalizeSquarePayment,
+  normalizeTerminalCheckout,
   squareErrorMessage,
   squareEventId,
   verifySquareSignature,
@@ -101,7 +105,15 @@ describe("Square payment normalization", () => {
       currency: "CAD",
       sourceType: "CARD",
       referenceId: "6f1d3f0a-0000-0000-0000-000000000000",
+      terminalCheckoutId: null,
     });
+  });
+
+  it("carries the terminal checkout id when present", () => {
+    expect(
+      normalizeSquarePayment({ id: "p1", terminal_checkout_id: "tc_1" })
+        ?.terminalCheckoutId,
+    ).toBe("tc_1");
   });
 
   it("tolerates missing optional fields", () => {
@@ -114,6 +126,7 @@ describe("Square payment normalization", () => {
       currency: null,
       sourceType: null,
       referenceId: null,
+      terminalCheckoutId: null,
     });
   });
 
@@ -135,6 +148,60 @@ describe("Square payment normalization", () => {
     );
     expect(extractSquarePaymentFromEvent({ data: {} })).toBeNull();
     expect(extractSquarePaymentFromEvent({})).toBeNull();
+  });
+});
+
+describe("Square Terminal checkout (§10.1 POS)", () => {
+  const checkout = {
+    id: "tc_1",
+    status: "COMPLETED",
+    amount_money: { amount: 9900, currency: "CAD" },
+    reference_id: "inv-uuid-1",
+    payment_ids: ["sq_pay_9"],
+  };
+
+  it("recognizes terminal webhook event types", () => {
+    expect(isSquareTerminalEvent("terminal.checkout.created")).toBe(true);
+    expect(isSquareTerminalEvent("terminal.checkout.updated")).toBe(true);
+    expect(isSquareTerminalEvent("payment.updated")).toBe(false);
+    expect(isSquareTerminalEvent(null)).toBe(false);
+  });
+
+  it("maps checkout statuses onto the internal enum", () => {
+    expect(mapTerminalCheckoutStatus("COMPLETED")).toBe("confirmed");
+    expect(mapTerminalCheckoutStatus("CANCELED")).toBe("cancelled");
+    expect(mapTerminalCheckoutStatus("PENDING")).toBe("pending");
+    expect(mapTerminalCheckoutStatus("IN_PROGRESS")).toBe("pending");
+    expect(mapTerminalCheckoutStatus("CANCEL_REQUESTED")).toBe("pending");
+    expect(mapTerminalCheckoutStatus(undefined)).toBe("pending");
+  });
+
+  it("normalizes a checkout object", () => {
+    expect(normalizeTerminalCheckout(checkout)).toEqual({
+      checkoutId: "tc_1",
+      status: "COMPLETED",
+      amountCents: 9900,
+      currency: "CAD",
+      referenceId: "inv-uuid-1",
+      paymentIds: ["sq_pay_9"],
+    });
+  });
+
+  it("defaults payment_ids to an empty list and rejects missing ids", () => {
+    expect(normalizeTerminalCheckout({ id: "tc_2" })?.paymentIds).toEqual([]);
+    expect(normalizeTerminalCheckout({})).toBeNull();
+    expect(normalizeTerminalCheckout(null)).toBeNull();
+  });
+
+  it("extracts the checkout from a webhook envelope", () => {
+    const envelope = {
+      type: "terminal.checkout.updated",
+      event_id: "evt_t1",
+      data: { type: "checkout", id: "tc_1", object: { checkout } },
+    };
+    expect(extractTerminalCheckoutFromEvent(envelope)?.checkoutId).toBe("tc_1");
+    expect(extractTerminalCheckoutFromEvent({ data: {} })).toBeNull();
+    expect(extractTerminalCheckoutFromEvent({})).toBeNull();
   });
 });
 

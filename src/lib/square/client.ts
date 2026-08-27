@@ -1,9 +1,11 @@
 import { logger } from "@/lib/observability/logger";
 import {
   normalizeSquarePayment,
+  normalizeTerminalCheckout,
   squareErrorMessage,
   type SquareApiError,
   type SquarePaymentSummary,
+  type TerminalCheckoutSummary,
 } from "@/lib/domain/square";
 
 /**
@@ -23,6 +25,8 @@ export interface SquareConfig {
   locationId: string;
   environment: "production" | "sandbox";
   baseUrl: string;
+  /** Paired Square Terminal device id — null when no POS is configured. */
+  terminalDeviceId: string | null;
 }
 
 /** Read config from env; null when the integration is not configured. */
@@ -42,6 +46,7 @@ export function getSquareConfig(): SquareConfig | null {
       environment === "production"
         ? "https://connect.squareup.com"
         : "https://connect.squareupsandbox.com",
+    terminalDeviceId: process.env.SQUARE_TERMINAL_DEVICE_ID || null,
   };
 }
 
@@ -151,6 +156,87 @@ export async function getSquarePayment(
     return { ok: false, error: "Square returned an unexpected response." };
   }
   return { ok: true, value: payment };
+}
+
+/**
+ * Push a checkout to the paired Square Terminal (POST /v2/terminals/checkouts).
+ * The device shows the amount and takes the card; completion arrives via the
+ * terminal.checkout.updated webhook and via polling GetTerminalCheckout.
+ * Tipping is disabled so the captured amount always equals the invoice charge.
+ */
+export async function createTerminalCheckout(params: {
+  amountCents: number;
+  currency: string;
+  idempotencyKey: string;
+  referenceId?: string;
+  note?: string;
+}): Promise<SquareResult<TerminalCheckoutSummary>> {
+  const config = getSquareConfig();
+  if (!config) return { ok: false, error: "Square is not configured." };
+  if (!config.terminalDeviceId) {
+    return { ok: false, error: "No Square Terminal is configured." };
+  }
+
+  const result = await squareFetch(config, "POST", "/v2/terminals/checkouts", {
+    idempotency_key: params.idempotencyKey,
+    checkout: {
+      amount_money: { amount: params.amountCents, currency: params.currency },
+      device_options: {
+        device_id: config.terminalDeviceId,
+        skip_receipt_screen: false,
+        tip_settings: { allow_tipping: false },
+      },
+      reference_id: params.referenceId,
+      note: params.note,
+    },
+  });
+  if (!result.ok) return result;
+
+  const checkout = normalizeTerminalCheckout(result.value.checkout);
+  if (!checkout) {
+    return { ok: false, error: "Square returned an unexpected response." };
+  }
+  return { ok: true, value: checkout };
+}
+
+/** Load a Terminal checkout (GET /v2/terminals/checkouts/{id}). */
+export async function getTerminalCheckout(
+  checkoutId: string,
+): Promise<SquareResult<TerminalCheckoutSummary>> {
+  const config = getSquareConfig();
+  if (!config) return { ok: false, error: "Square is not configured." };
+
+  const result = await squareFetch(
+    config,
+    "GET",
+    `/v2/terminals/checkouts/${encodeURIComponent(checkoutId)}`,
+  );
+  if (!result.ok) return result;
+  const checkout = normalizeTerminalCheckout(result.value.checkout);
+  if (!checkout) {
+    return { ok: false, error: "Square returned an unexpected response." };
+  }
+  return { ok: true, value: checkout };
+}
+
+/** Cancel an in-flight Terminal checkout (POST .../{id}/cancel). */
+export async function cancelTerminalCheckout(
+  checkoutId: string,
+): Promise<SquareResult<TerminalCheckoutSummary>> {
+  const config = getSquareConfig();
+  if (!config) return { ok: false, error: "Square is not configured." };
+
+  const result = await squareFetch(
+    config,
+    "POST",
+    `/v2/terminals/checkouts/${encodeURIComponent(checkoutId)}/cancel`,
+  );
+  if (!result.ok) return result;
+  const checkout = normalizeTerminalCheckout(result.value.checkout);
+  if (!checkout) {
+    return { ok: false, error: "Square returned an unexpected response." };
+  }
+  return { ok: true, value: checkout };
 }
 
 /** Refund a captured payment, fully or partially (POST /v2/refunds). */
