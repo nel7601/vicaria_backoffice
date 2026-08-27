@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { inputClass } from "@/components/ui/field";
 import { formatCents } from "@/lib/domain/money";
-import { computeInvoiceTotals } from "@/lib/domain/invoice";
+import { cashDiscountCents, computeInvoiceTotals } from "@/lib/domain/invoice";
 import { createInvoiceAction } from "./actions";
 
 export interface InvoiceServiceOption {
@@ -57,13 +57,22 @@ export function NewInvoiceForm({
   const [patientId, setPatientId] = useState("");
   const [language, setLanguage] = useState<"en" | "es">("en");
   const [notes, setNotes] = useState("");
+  const [cashDiscount, setCashDiscount] = useState(false);
   const [lines, setLines] = useState<Line[]>([{ ...EMPTY_LINE }]);
   const [error, setError] = useState<string | null>(null);
 
+  function lineWithDiscount(l: Line) {
+    const c = lineCents(l);
+    const gross = l.quantity * c.unitPriceCents;
+    return {
+      quantity: l.quantity,
+      ...c,
+      discountCents: cashDiscount ? cashDiscountCents(gross, c.taxRateBps) : 0,
+    };
+  }
+
   const totals = computeInvoiceTotals(
-    lines
-      .filter((l) => l.serviceId)
-      .map((l) => ({ quantity: l.quantity, ...lineCents(l) })),
+    lines.filter((l) => l.serviceId).map(lineWithDiscount),
   );
 
   function updateLine(i: number, patch: Partial<Line>) {
@@ -91,8 +100,7 @@ export function NewInvoiceForm({
         items: valid.map((l) => ({
           serviceId: l.serviceId,
           description: l.description,
-          quantity: Number(l.quantity),
-          ...lineCents(l),
+          ...lineWithDiscount(l),
         })),
       });
       if (res.ok && res.id) {
@@ -233,13 +241,32 @@ export function NewInvoiceForm({
           + Add line
         </Button>
         <div className="text-sm text-muted">
-          Subtotal {formatCents(totals.subtotalCents)} · Tax{" "}
-          {formatCents(totals.taxCents)} ·{" "}
+          Subtotal {formatCents(totals.subtotalCents)}
+          {totals.discountCents > 0 && (
+            <> · Discount −{formatCents(totals.discountCents)}</>
+          )}{" "}
+          · Tax {formatCents(totals.taxCents)} ·{" "}
           <span className="text-base font-semibold text-foreground">
             Total {formatCents(totals.totalCents)}
           </span>
         </div>
       </div>
+
+      <label className="flex items-start gap-2 text-sm">
+        <input
+          type="checkbox"
+          className="mt-0.5"
+          checked={cashDiscount}
+          onChange={(e) => setCashDiscount(e.target.checked)}
+        />
+        <span>
+          <span className="font-medium">Cash discount (tax-equivalent)</span>{" "}
+          <span className="text-muted">
+            — discounts the taxable base so the total equals the pre-tax
+            price; HST is still charged and remitted on the discounted base.
+          </span>
+        </span>
+      </label>
 
       {/* One general description for the whole invoice */}
       <label className="flex flex-col gap-1 text-sm">

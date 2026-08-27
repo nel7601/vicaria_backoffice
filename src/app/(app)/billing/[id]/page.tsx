@@ -137,6 +137,7 @@ export default async function InvoiceDetailPage({
                 description: it.description,
                 quantity: it.quantity,
                 unitPriceCents: it.unitPriceCents,
+                discountCents: it.discountCents,
                 taxRateBps: it.taxRateBps,
               }))}
               services={serviceOptions}

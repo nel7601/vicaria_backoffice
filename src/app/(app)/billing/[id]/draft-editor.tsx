@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { inputClass } from "@/components/ui/field";
 import { formatCents } from "@/lib/domain/money";
-import { computeInvoiceTotals } from "@/lib/domain/invoice";
+import { cashDiscountCents, computeInvoiceTotals } from "@/lib/domain/invoice";
 import { updateInvoiceDraftAction } from "../actions";
 
 export interface DraftItem {
@@ -13,6 +13,7 @@ export interface DraftItem {
   description: string;
   quantity: number;
   unitPriceCents: number;
+  discountCents: number;
   taxRateBps: number;
 }
 
@@ -67,12 +68,24 @@ export function DraftEditor({
   const [editing, setEditing] = useState(false);
   const [language, setLanguage] = useState<"en" | "es">(initialLanguage);
   const [notes, setNotes] = useState(initialNotes ?? "");
+  // Toggle preserved from stored per-line discounts.
+  const [cashDiscount, setCashDiscount] = useState(
+    items.some((i) => i.discountCents > 0),
+  );
   const [lines, setLines] = useState<Line[]>(items.map(toLine));
   const [error, setError] = useState<string | null>(null);
 
-  const totals = computeInvoiceTotals(
-    lines.map((l) => ({ quantity: l.quantity, ...lineCents(l) })),
-  );
+  function lineWithDiscount(l: Line) {
+    const c = lineCents(l);
+    const gross = l.quantity * c.unitPriceCents;
+    return {
+      quantity: l.quantity,
+      ...c,
+      discountCents: cashDiscount ? cashDiscountCents(gross, c.taxRateBps) : 0,
+    };
+  }
+
+  const totals = computeInvoiceTotals(lines.map(lineWithDiscount));
 
   function updateLine(i: number, patch: Partial<Line>) {
     setLines((ls) => ls.map((l, idx) => (idx === i ? { ...l, ...patch } : l)));
@@ -103,8 +116,7 @@ export function DraftEditor({
           .map((l) => ({
             serviceId: l.serviceId || undefined,
             description: l.description,
-            quantity: Number(l.quantity),
-            ...lineCents(l),
+            ...lineWithDiscount(l),
           })),
       });
       if (res.ok) {
@@ -252,13 +264,32 @@ export function DraftEditor({
           + Add line
         </Button>
         <div className="text-sm text-muted">
-          Subtotal {formatCents(totals.subtotalCents)} · Tax{" "}
-          {formatCents(totals.taxCents)} ·{" "}
+          Subtotal {formatCents(totals.subtotalCents)}
+          {totals.discountCents > 0 && (
+            <> · Discount −{formatCents(totals.discountCents)}</>
+          )}{" "}
+          · Tax {formatCents(totals.taxCents)} ·{" "}
           <span className="text-base font-semibold text-foreground">
             Total {formatCents(totals.totalCents)}
           </span>
         </div>
       </div>
+
+      <label className="flex items-start gap-2 text-sm">
+        <input
+          type="checkbox"
+          className="mt-0.5"
+          checked={cashDiscount}
+          onChange={(e) => setCashDiscount(e.target.checked)}
+        />
+        <span>
+          <span className="font-medium">Cash discount (tax-equivalent)</span>{" "}
+          <span className="text-muted">
+            — discounts the taxable base so the total equals the pre-tax
+            price; HST is still charged and remitted on the discounted base.
+          </span>
+        </span>
+      </label>
 
       <label className="flex flex-col gap-1 text-sm">
         <span className="font-medium">Description (optional)</span>

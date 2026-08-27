@@ -92,3 +92,25 @@ describe("receipt never exceeds confirmed allocations (§FR-REC-001)", () => {
     expect(balanceCents(10000, 5000)).toBe(5000);
   });
 });
+
+describe("cash discount (tax-equivalent, compliant)", () => {
+  it("discounts the base so discounted base + tax equals the sticker price", async () => {
+    const { cashDiscountCents, computeInvoiceTotals } = await import(
+      "@/lib/domain/invoice"
+    );
+    const gross = 15000; // $150.00 @ 13% HST
+    const d = cashDiscountCents(gross, 1300);
+    const totals = computeInvoiceTotals([
+      { quantity: 1, unitPriceCents: gross, discountCents: d, taxRateBps: 1300 },
+    ]);
+    // Out-the-door total matches the pre-tax price within a cent.
+    expect(Math.abs(totals.totalCents - gross)).toBeLessThanOrEqual(1);
+    // Tax is still charged on the discounted base (not zero).
+    expect(totals.taxCents).toBeGreaterThan(0);
+  });
+
+  it("is zero for tax-free lines", async () => {
+    const { cashDiscountCents } = await import("@/lib/domain/invoice");
+    expect(cashDiscountCents(15000, 0)).toBe(0);
+  });
+});

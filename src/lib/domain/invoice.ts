@@ -156,3 +156,18 @@ export function derivePaymentStatus(
 function nowGuard(): Date {
   return new Date();
 }
+
+/**
+ * Cash-discount amount for one line (compliant "tax-equivalent" discount):
+ * the discount D such that (gross - D) + tax(gross - D) ≈ gross, i.e. the
+ * customer pays the pre-tax sticker price while HST is still charged and
+ * remitted on the discounted base. D = gross · r / (1 + r).
+ */
+export function cashDiscountCents(
+  grossCents: number,
+  taxRateBps: number,
+): number {
+  if (taxRateBps <= 0 || grossCents <= 0) return 0;
+  const r = taxRateBps / 10000;
+  return Math.round((grossCents * r) / (1 + r));
+}
