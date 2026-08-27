@@ -7,9 +7,11 @@ import type { TemplateField } from "@/lib/domain/encounter";
 import { getPrimaryOrganization } from "@/lib/db/queries/organization";
 import { getPatientById } from "@/lib/db/queries/patients";
 import { getPatientChart } from "@/lib/db/queries/clinical";
+import { listTemplatesDetailed } from "@/lib/db/queries/encounters";
 import { recordAccess } from "@/lib/audit/record";
 import { clinicDateString } from "@/lib/domain/timezone";
 import { AddNoteForm } from "./add-note-form";
+import { AddFormPanel, type FormOption } from "./add-form-panel";
 
 const TZ = "America/Toronto";
 
@@ -52,10 +54,25 @@ const ENCOUNTER_STATUS_STYLE: Record<string, string> = {
   amended: "bg-primary/10 text-primary",
 };
 
+/** One filled form or one visit's answers, shown inside a form tab. */
+interface TabItem {
+  key: string;
+  at: Date;
+  schema: unknown;
+  answers: Record<string, unknown>;
+  /** "encounter" items link to the visit; "form" items were filled directly. */
+  kind: "encounter" | "form";
+  encounterId?: string;
+  status?: string;
+  serviceName?: string | null;
+  byLine: string;
+}
+
 /**
  * Clinical record — everything clinical about one patient in one place:
- * a tab per form (template) with the answers captured in each visit, and an
- * Evolution tab merging encounters and clinician chart notes chronologically.
+ * a tab per form with the answers captured each time it was filled (in a
+ * visit or directly from here), and an Evolution tab merging encounters,
+ * filled forms and clinician chart notes chronologically.
  */
 export default async function ClinicalRecordPage({
   params,
@@ -86,7 +103,11 @@ export default async function ClinicalRecordPage({
   const patient = await getPatientById(org.id, id);
   if (!patient) notFound();
 
-  const chart = await getPatientChart(org.id, id);
+  const canAdd = can(roles, "clinical_notes", "create");
+  const [chart, templates] = await Promise.all([
+    getPatientChart(org.id, id),
+    canAdd ? listTemplatesDetailed(org.id) : Promise.resolve([]),
+  ]);
 
   await recordAccess({
     organizationId: org.id,
@@ -97,27 +118,56 @@ export default async function ClinicalRecordPage({
     purpose: "clinical_record",
   });
 
-  // One tab per form (template) actually used with this patient.
-  const formTabs = new Map<
-    string,
-    { name: string; encounters: typeof chart.encounters }
-  >();
+  const formOptions: FormOption[] = templates
+    .filter((t) => t.versionId)
+    .map((t) => ({
+      templateId: t.templateId,
+      versionId: t.versionId!,
+      name: t.name,
+      fields: extractFields(t.schema),
+    }));
+
+  // One tab per form used with this patient — from visits or filled directly.
+  const formTabs = new Map<string, { name: string; items: TabItem[] }>();
+  const tabFor = (templateId: string, name: string) => {
+    const entry = formTabs.get(templateId) ?? { name, items: [] };
+    formTabs.set(templateId, entry);
+    return entry;
+  };
   for (const e of chart.encounters) {
     if (!e.templateId || !e.templateName) continue;
-    const entry = formTabs.get(e.templateId) ?? {
-      name: e.templateName,
-      encounters: [] as typeof chart.encounters,
-    };
-    entry.encounters.push(e);
-    formTabs.set(e.templateId, entry);
+    tabFor(e.templateId, e.templateName).items.push({
+      key: `e-${e.id}`,
+      at: e.startedAt ?? e.createdAt,
+      schema: e.templateSchema,
+      answers: (e.contentSnapshot ?? {}) as Record<string, unknown>,
+      kind: "encounter",
+      encounterId: e.id,
+      status: e.status,
+      serviceName: e.serviceName,
+      byLine: `${e.practitionerFirst} ${e.practitionerLast}`,
+    });
+  }
+  for (const f of chart.forms) {
+    tabFor(f.templateId, f.templateName).items.push({
+      key: `f-${f.id}`,
+      at: f.filledAt,
+      schema: f.templateSchema,
+      answers: (f.answers ?? {}) as Record<string, unknown>,
+      kind: "form",
+      byLine: f.filledByEmail ?? "—",
+    });
+  }
+  for (const t of formTabs.values()) {
+    t.items.sort((a, b) => b.at.getTime() - a.at.getTime());
   }
 
   const activeTab = tab && formTabs.has(tab) ? tab : "evolution";
-  const canAddNote = can(roles, "clinical_notes", "create");
 
-  // Evolution: encounters + chart notes merged, newest first.
+  // Evolution: encounters + filled forms + chart notes merged, newest first.
   type EvolutionEntry =
     | { kind: "encounter"; at: Date; encounter: (typeof chart.encounters)[number] }
+    | { kind: "form"; at: Date; form: (typeof chart.forms)[number] }
     | { kind: "note"; at: Date; note: (typeof chart.notes)[number] };
   const evolution: EvolutionEntry[] = [
     ...chart.encounters.map((e) => ({
@@ -125,6 +175,7 @@ export default async function ClinicalRecordPage({
       at: e.startedAt ?? e.createdAt,
       encounter: e,
     })),
+    ...chart.forms.map((f) => ({ kind: "form" as const, at: f.filledAt, form: f })),
     ...chart.notes.map((n) => ({ kind: "note" as const, at: n.notedAt, note: n })),
   ].sort((a, b) => b.at.getTime() - a.at.getTime());
 
@@ -150,42 +201,52 @@ export default async function ClinicalRecordPage({
         </h1>
         <p className="text-sm text-muted">
           {patient.patientNumber} · {chart.encounters.length} encounter
-          {chart.encounters.length === 1 ? "" : "s"} · {chart.notes.length} note
+          {chart.encounters.length === 1 ? "" : "s"} · {chart.forms.length} form
+          {chart.forms.length === 1 ? "" : "s"} · {chart.notes.length} note
           {chart.notes.length === 1 ? "" : "s"}
         </p>
       </div>
 
-      {/* Tabs: Evolution + one per form */}
-      <div className="flex flex-wrap items-center gap-2">
-        <Link
-          href={`/patients/${patient.id}/record`}
-          className={tabClass(activeTab === "evolution")}
-        >
-          Evolution
-        </Link>
-        {[...formTabs.entries()].map(([templateId, t]) => (
+      {/* Tabs: Evolution + one per form, and the Add form control */}
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2">
           <Link
-            key={templateId}
-            href={`/patients/${patient.id}/record?tab=${templateId}`}
-            className={tabClass(activeTab === templateId)}
+            href={`/patients/${patient.id}/record`}
+            className={tabClass(activeTab === "evolution")}
           >
-            {t.name}
-            <span className="ml-1.5 text-xs opacity-70">
-              {t.encounters.length}
-            </span>
+            Evolution
           </Link>
-        ))}
+          {[...formTabs.entries()].map(([templateId, t]) => (
+            <Link
+              key={templateId}
+              href={`/patients/${patient.id}/record?tab=${templateId}`}
+              className={tabClass(activeTab === templateId)}
+            >
+              {t.name}
+              <span className="ml-1.5 text-xs opacity-70">{t.items.length}</span>
+            </Link>
+          ))}
+        </div>
       </div>
+
+      {canAdd && (
+        <AddFormPanel
+          patientId={patient.id}
+          forms={formOptions}
+          today={clinicDateString(new Date())}
+        />
+      )}
 
       {/* Evolution tab */}
       {activeTab === "evolution" && (
         <Card>
           <CardTitle>Evolution</CardTitle>
           <p className="mt-1 text-sm text-muted">
-            Visits and progress notes in chronological order, newest first.
+            Visits, filled forms and progress notes in chronological order,
+            newest first.
           </p>
 
-          {canAddNote && (
+          {canAdd && (
             <div className="mt-4">
               <AddNoteForm
                 patientId={patient.id}
@@ -197,105 +258,133 @@ export default async function ClinicalRecordPage({
           <ol className="mt-5 space-y-4 border-l border-border pl-4">
             {evolution.length === 0 && (
               <li className="text-sm text-muted">
-                No encounters or notes yet.
+                No encounters, forms or notes yet.
               </li>
             )}
-            {evolution.map((entry) =>
-              entry.kind === "encounter" ? (
-                <li key={`e-${entry.encounter.id}`} className="relative">
-                  <span className="absolute -left-[21.5px] top-1.5 h-2.5 w-2.5 rounded-full bg-primary" />
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="text-sm font-medium">
-                      {fmtDate(entry.at)} ·{" "}
-                      <Link
-                        href={`/encounters/${entry.encounter.id}`}
-                        className="text-primary hover:underline"
-                      >
-                        {entry.encounter.serviceName ?? "Encounter"}
-                      </Link>
-                    </div>
-                    <span
-                      className={`rounded-full px-2 py-0.5 text-xs ${ENCOUNTER_STATUS_STYLE[entry.encounter.status] ?? "bg-border text-muted"}`}
-                    >
-                      {entry.encounter.status}
-                    </span>
-                  </div>
-                  <div className="text-xs text-muted">
-                    {entry.encounter.practitionerFirst}{" "}
-                    {entry.encounter.practitionerLast} ·{" "}
-                    {entry.encounter.modality.replace("_", " ")}
-                    {entry.encounter.templateName
-                      ? ` · ${entry.encounter.templateName}`
-                      : ""}
-                  </div>
-                  {entry.encounter.summary && (
-                    <p className="mt-1 whitespace-pre-wrap rounded-md bg-background p-2.5 text-sm">
-                      {entry.encounter.summary}
-                    </p>
-                  )}
-                </li>
-              ) : (
-                <li key={`n-${entry.note.id}`} className="relative">
-                  <span className="absolute -left-[21.5px] top-1.5 h-2.5 w-2.5 rounded-full bg-success" />
-                  <div className="text-sm font-medium">
-                    {fmtDate(entry.at)} · Note
-                  </div>
-                  <div className="text-xs text-muted">
-                    {entry.note.authorEmail ?? "—"} · added{" "}
-                    {fmtDateTime(entry.note.createdAt)}
-                  </div>
-                  <p className="mt-1 whitespace-pre-wrap rounded-md bg-success-soft/60 p-2.5 text-sm">
-                    {entry.note.body}
-                  </p>
-                </li>
-              ),
-            )}
-          </ol>
-        </Card>
-      )}
-
-      {/* Form tabs: answers captured with that template, visit by visit */}
-      {activeTab !== "evolution" && formTabs.has(activeTab) && (
-        <Card>
-          <CardTitle>{formTabs.get(activeTab)!.name}</CardTitle>
-          <p className="mt-1 text-sm text-muted">
-            Information collected with this form, newest visit first.
-          </p>
-          <div className="mt-4 space-y-5">
-            {formTabs.get(activeTab)!.encounters.map((e) => {
-              const fields = extractFields(e.templateSchema);
-              const answers = (e.contentSnapshot ?? {}) as Record<string, unknown>;
-              return (
-                <div
-                  key={e.id}
-                  className="rounded-2xl border border-border p-4"
-                >
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="text-sm font-medium">
-                      {fmtDate(e.startedAt ?? e.createdAt)}
-                      {e.serviceName ? ` · ${e.serviceName}` : ""} ·{" "}
-                      {e.practitionerFirst} {e.practitionerLast}
-                    </div>
-                    <div className="flex items-center gap-2">
+            {evolution.map((entry) => {
+              if (entry.kind === "encounter") {
+                const e = entry.encounter;
+                return (
+                  <li key={`e-${e.id}`} className="relative">
+                    <span className="absolute -left-[21.5px] top-1.5 h-2.5 w-2.5 rounded-full bg-primary" />
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="text-sm font-medium">
+                        {fmtDate(entry.at)} ·{" "}
+                        <Link
+                          href={`/encounters/${e.id}`}
+                          className="text-primary hover:underline"
+                        >
+                          {e.serviceName ?? "Encounter"}
+                        </Link>
+                      </div>
                       <span
                         className={`rounded-full px-2 py-0.5 text-xs ${ENCOUNTER_STATUS_STYLE[e.status] ?? "bg-border text-muted"}`}
                       >
                         {e.status}
                       </span>
+                    </div>
+                    <div className="text-xs text-muted">
+                      {e.practitionerFirst} {e.practitionerLast} ·{" "}
+                      {e.modality.replace("_", " ")}
+                    </div>
+                    {e.summary && (
+                      <p className="mt-1 whitespace-pre-wrap rounded-md bg-background p-2.5 text-sm">
+                        {e.summary}
+                      </p>
+                    )}
+                  </li>
+                );
+              }
+              if (entry.kind === "form") {
+                const f = entry.form;
+                return (
+                  <li key={`f-${f.id}`} className="relative">
+                    <span className="absolute -left-[21.5px] top-1.5 h-2.5 w-2.5 rounded-full bg-warning" />
+                    <div className="text-sm font-medium">
+                      {fmtDate(entry.at)} ·{" "}
                       <Link
-                        href={`/encounters/${e.id}`}
-                        className="text-xs text-primary hover:underline"
+                        href={`/patients/${patient.id}/record?tab=${f.templateId}`}
+                        className="text-primary hover:underline"
                       >
-                        Open encounter
-                      </Link>
+                        {f.templateName}
+                      </Link>{" "}
+                      <span className="font-normal text-muted">form</span>
+                    </div>
+                    <div className="text-xs text-muted">
+                      Filled by {f.filledByEmail ?? "—"}
+                    </div>
+                  </li>
+                );
+              }
+              const n = entry.note;
+              return (
+                <li key={`n-${n.id}`} className="relative">
+                  <span className="absolute -left-[21.5px] top-1.5 h-2.5 w-2.5 rounded-full bg-success" />
+                  <div className="text-sm font-medium">
+                    {fmtDate(entry.at)} · Note
+                  </div>
+                  <div className="text-xs text-muted">
+                    {n.authorEmail ?? "—"} · added {fmtDateTime(n.createdAt)}
+                  </div>
+                  <p className="mt-1 whitespace-pre-wrap rounded-md bg-success-soft/60 p-2.5 text-sm">
+                    {n.body}
+                  </p>
+                </li>
+              );
+            })}
+          </ol>
+        </Card>
+      )}
+
+      {/* Form tabs: every time this form was filled, newest first */}
+      {activeTab !== "evolution" && formTabs.has(activeTab) && (
+        <Card>
+          <CardTitle>{formTabs.get(activeTab)!.name}</CardTitle>
+          <p className="mt-1 text-sm text-muted">
+            Information collected with this form, newest first.
+          </p>
+          <div className="mt-4 space-y-5">
+            {formTabs.get(activeTab)!.items.map((item) => {
+              const fields = extractFields(item.schema);
+              return (
+                <div key={item.key} className="rounded-2xl border border-border p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="text-sm font-medium">
+                      {fmtDate(item.at)}
+                      {item.serviceName ? ` · ${item.serviceName}` : ""} ·{" "}
+                      {item.byLine}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {item.kind === "encounter" ? (
+                        <>
+                          <span
+                            className={`rounded-full px-2 py-0.5 text-xs ${ENCOUNTER_STATUS_STYLE[item.status ?? ""] ?? "bg-border text-muted"}`}
+                          >
+                            {item.status}
+                          </span>
+                          <Link
+                            href={`/encounters/${item.encounterId}`}
+                            className="text-xs text-primary hover:underline"
+                          >
+                            Open encounter
+                          </Link>
+                        </>
+                      ) : (
+                        <span className="rounded-full bg-warning/10 px-2 py-0.5 text-xs text-warning">
+                          filled directly
+                        </span>
+                      )}
                     </div>
                   </div>
                   <dl className="mt-3 grid grid-cols-1 gap-x-8 gap-y-2 text-sm sm:grid-cols-2">
                     {fields.map((f) => (
-                      <div key={f.key} className="flex justify-between gap-4 sm:block">
+                      <div
+                        key={f.key}
+                        className="flex justify-between gap-4 sm:block"
+                      >
                         <dt className="text-muted">{f.label}</dt>
                         <dd className="whitespace-pre-wrap">
-                          {answerText(answers[f.key])}
+                          {answerText(item.answers[f.key])}
                         </dd>
                       </div>
                     ))}

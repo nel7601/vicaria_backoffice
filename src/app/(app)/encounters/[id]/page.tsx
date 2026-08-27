@@ -4,31 +4,22 @@ import { Card, CardTitle } from "@/components/ui/card";
 import { RecordLink } from "@/components/ui/record-link";
 import { getSessionUser } from "@/lib/auth/session";
 import { can } from "@/lib/auth/rbac";
-import type { TemplateField } from "@/lib/domain/encounter";
 import { getEncounter, listEncounterLines } from "@/lib/db/queries/encounters";
 import { listServicesWithPrice } from "@/lib/db/queries/organization";
 import { getPatientById } from "@/lib/db/queries/patients";
 import { getPrimaryOrganization } from "@/lib/db/queries/organization";
 import { recordAccess } from "@/lib/audit/record";
 import {
-  EncounterWorkspace,
-  type WorkspaceEncounter,
-} from "./encounter-workspace";
-import {
   ServicesPerformed,
   type LineRow,
   type ServiceOption,
 } from "./services-performed";
 
-function extractFields(schema: unknown): TemplateField[] {
-  if (Array.isArray(schema)) return schema as TemplateField[];
-  if (schema && typeof schema === "object" && "fields" in schema) {
-    const f = (schema as { fields?: unknown }).fields;
-    if (Array.isArray(f)) return f as TemplateField[];
-  }
-  return [];
-}
-
+/**
+ * Encounter — the visit's billing/summary record: services actually
+ * performed plus the doctor's free-text summary. Structured data collection
+ * (forms) happens in the patient's clinical record.
+ */
 export default async function EncounterPage({
   params,
 }: {
@@ -94,18 +85,8 @@ export default async function EncounterPage({
   }
   if (!data) notFound();
 
-  const { encounter, template, amendments, measurements } = data;
-  const fields = extractFields(template?.schema);
+  const { encounter } = data;
   const canEdit = can(user.roles, "clinical_notes", "update");
-
-  const ws: WorkspaceEncounter = {
-    id: encounter.id,
-    status: encounter.status,
-    summary: encounter.summary,
-    contentSnapshot: (encounter.contentSnapshot ?? {}) as Record<string, unknown>,
-    contentHash: encounter.contentHash,
-    signedAt: encounter.signedAt ? encounter.signedAt.toISOString() : null,
-  };
 
   return (
     <div className="space-y-6">
@@ -118,37 +99,9 @@ export default async function EncounterPage({
           <RecordLink patientId={encounter.patientId} />
         </h1>
         <p className="text-sm text-muted">
-          {encounter.status}
-          {template ? ` · template applied` : ""}
+          {encounter.status} · structured forms live in the clinical record
         </p>
       </div>
-
-      <Card>
-        {canEdit ? (
-          <EncounterWorkspace
-            encounter={ws}
-            fields={fields}
-            amendments={amendments.map((a) => ({
-              id: a.id,
-              body: a.body,
-              authoredAt: a.authoredAt.toISOString(),
-            }))}
-            measurements={measurements.map((m) => ({
-              id: m.id,
-              observationType: m.observationType,
-              valueNumeric: m.valueNumeric,
-              valueText: m.valueText,
-              unit: m.unit,
-            }))}
-          />
-        ) : (
-          <ReadOnlyView
-            summary={encounter.summary}
-            fields={fields}
-            answers={(encounter.contentSnapshot ?? {}) as Record<string, unknown>}
-          />
-        )}
-      </Card>
 
       <Card>
         <CardTitle>Services performed</CardTitle>
@@ -160,34 +113,14 @@ export default async function EncounterPage({
             services={serviceOptions}
             canEditLines={canEdit && encounter.status === "draft"}
             canInvoice={can(user.roles, "invoices_payments", "create")}
+            summary={encounter.summary}
+            contentSnapshot={
+              (encounter.contentSnapshot ?? {}) as Record<string, unknown>
+            }
+            contentHash={encounter.contentHash}
           />
         </div>
       </Card>
-    </div>
-  );
-}
-
-function ReadOnlyView({
-  summary,
-  fields,
-  answers,
-}: {
-  summary: string | null;
-  fields: TemplateField[];
-  answers: Record<string, unknown>;
-}) {
-  return (
-    <div className="space-y-3 text-sm">
-      {fields.map((f) => (
-        <div key={f.key}>
-          <div className="font-medium">{f.label}</div>
-          <div className="text-muted">{String(answers[f.key] ?? "—")}</div>
-        </div>
-      ))}
-      <div>
-        <div className="font-medium">Summary</div>
-        <div className="text-muted">{summary || "—"}</div>
-      </div>
     </div>
   );
 }

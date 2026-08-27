@@ -27,3 +27,13 @@ export const addChartNoteSchema = z.object({
 });
 
 export type AddChartNoteInput = z.infer<typeof addChartNoteSchema>;
+
+/** Standalone form filled from the clinical record. */
+export const addPatientFormSchema = z.object({
+  patientId: z.string().uuid(),
+  templateVersionId: z.string().uuid(),
+  filledAt: z.string().date(),
+  answers: z.record(z.string(), z.unknown()),
+});
+
+export type AddPatientFormInput = z.infer<typeof addPatientFormSchema>;

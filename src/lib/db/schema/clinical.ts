@@ -1,5 +1,6 @@
 import {
   integer,
+  jsonb,
   pgTable,
   text,
   timestamp,
@@ -15,7 +16,7 @@ import {
   taskPriorityEnum,
   treatmentPlanStatusEnum,
 } from "./enums";
-import { encounters } from "./encounters";
+import { encounters, encounterTemplateVersions } from "./encounters";
 import { organizations } from "./organizations";
 import { patients } from "./patients";
 import { employees, users } from "./users";
@@ -75,6 +76,30 @@ export const patientChartNotes = pgTable("patient_chart_notes", {
     .notNull()
     .defaultNow(),
   body: text("body").notNull(),
+  ...timestamps,
+});
+
+/**
+ * patient_forms — standalone form responses filled from the clinical record
+ * (not inside an encounter note). The template version is pinned so later
+ * schema edits never mutate history.
+ */
+export const patientForms = pgTable("patient_forms", {
+  id: primaryId(),
+  organizationId: uuid("organization_id")
+    .notNull()
+    .references(() => organizations.id),
+  patientId: uuid("patient_id")
+    .notNull()
+    .references(() => patients.id),
+  templateVersionId: uuid("template_version_id")
+    .notNull()
+    .references(() => encounterTemplateVersions.id),
+  answers: jsonb("answers").notNull().default({}),
+  filledAt: timestamp("filled_at", { withTimezone: true, mode: "date" })
+    .notNull()
+    .defaultNow(),
+  filledBy: uuid("filled_by").references(() => users.id),
   ...timestamps,
 });
 

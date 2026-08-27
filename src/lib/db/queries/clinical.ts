@@ -7,6 +7,7 @@ import {
   encounterTemplateVersions,
   followUpTasks,
   patientChartNotes,
+  patientForms,
   services,
   treatmentPlans,
   users,
@@ -24,7 +25,7 @@ export async function getPatientChart(organizationId: string, patientId: string)
     eq(encounters.patientId, patientId),
   );
 
-  const [rows, notes] = await Promise.all([
+  const [rows, notes, forms] = await Promise.all([
     db
       .select({
         id: encounters.id,
@@ -74,9 +75,37 @@ export async function getPatientChart(organizationId: string, patientId: string)
         ),
       )
       .orderBy(desc(patientChartNotes.notedAt)),
+    db
+      .select({
+        id: patientForms.id,
+        filledAt: patientForms.filledAt,
+        answers: patientForms.answers,
+        filledByEmail: users.email,
+        templateId: encounterTemplates.id,
+        templateName: encounterTemplates.name,
+        templateVersion: encounterTemplateVersions.version,
+        templateSchema: encounterTemplateVersions.schema,
+      })
+      .from(patientForms)
+      .innerJoin(
+        encounterTemplateVersions,
+        eq(encounterTemplateVersions.id, patientForms.templateVersionId),
+      )
+      .innerJoin(
+        encounterTemplates,
+        eq(encounterTemplates.id, encounterTemplateVersions.templateId),
+      )
+      .leftJoin(users, eq(users.id, patientForms.filledBy))
+      .where(
+        and(
+          eq(patientForms.organizationId, organizationId),
+          eq(patientForms.patientId, patientId),
+        ),
+      )
+      .orderBy(desc(patientForms.filledAt)),
   ]);
 
-  return { encounters: rows, notes };
+  return { encounters: rows, notes, forms };
 }
 
 export async function listPlans(organizationId: string, patientId: string) {

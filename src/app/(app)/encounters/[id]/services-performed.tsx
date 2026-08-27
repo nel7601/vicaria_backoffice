@@ -9,6 +9,8 @@ import {
   addEncounterLineAction,
   generateInvoiceFromEncounterAction,
   removeEncounterLineAction,
+  saveDraftAction,
+  signEncounterAction,
 } from "../actions";
 
 export interface LineRow {
@@ -39,6 +41,9 @@ export function ServicesPerformed({
   services,
   canEditLines,
   canInvoice,
+  summary: initialSummary,
+  contentSnapshot,
+  contentHash,
 }: {
   encounterId: string;
   status: string;
@@ -46,6 +51,9 @@ export function ServicesPerformed({
   services: ServiceOption[];
   canEditLines: boolean;
   canInvoice: boolean;
+  summary: string | null;
+  contentSnapshot: Record<string, unknown>;
+  contentHash: string | null;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -55,6 +63,42 @@ export function ServicesPerformed({
   const [quantity, setQuantity] = useState("1");
   const [price, setPrice] = useState("");
   const [taxPct, setTaxPct] = useState("13");
+  const [summary, setSummary] = useState(initialSummary ?? "");
+  const [message, setMessage] = useState<string | null>(null);
+
+  const isDraft = status === "draft";
+
+  function saveSummary() {
+    setMessage(null);
+    startTransition(async () => {
+      const res = await saveDraftAction(encounterId, {
+        answers: contentSnapshot,
+        summary,
+      });
+      setMessage(res.ok ? "Saved." : (res.error ?? "Save failed."));
+      if (res.ok) router.refresh();
+    });
+  }
+
+  function sign() {
+    if (!window.confirm("Sign this encounter? Signed notes are immutable."))
+      return;
+    setMessage(null);
+    startTransition(async () => {
+      // Persist the latest summary first, then sign.
+      const saved = await saveDraftAction(encounterId, {
+        answers: contentSnapshot,
+        summary,
+      });
+      if (!saved.ok) {
+        setMessage(saved.error ?? "Save failed.");
+        return;
+      }
+      const res = await signEncounterAction(encounterId);
+      setMessage(res.ok ? "Signed." : (res.error ?? "Sign failed."));
+      if (res.ok) router.refresh();
+    });
+  }
 
   function pickService(id: string) {
     setServiceId(id);
@@ -110,7 +154,41 @@ export function ServicesPerformed({
   const total = lines.reduce((sum, l) => sum + l.lineTotalCents, 0);
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
+      {/* Doctor's description of what was done in this visit */}
+      <div>
+        <label
+          htmlFor="encounter-summary"
+          className="text-sm font-medium"
+        >
+          Summary
+        </label>
+        {canEditLines ? (
+          <textarea
+            id="encounter-summary"
+            className={`${inputClass} mt-1 min-h-24 w-full`}
+            placeholder="Describe the service performed: findings, what was done, indications…"
+            value={summary}
+            onChange={(e) => setSummary(e.target.value)}
+          />
+        ) : (
+          <p className="mt-1 whitespace-pre-wrap rounded-md bg-background p-3 text-sm">
+            {summary || "—"}
+          </p>
+        )}
+      </div>
+
+      {!isDraft && (
+        <div className="rounded-md border border-success/40 bg-success/10 p-3 text-sm">
+          <p className="font-medium text-success">Signed note — immutable.</p>
+          {contentHash && (
+            <p className="mt-1 break-all text-xs text-muted">
+              hash: {contentHash}
+            </p>
+          )}
+        </div>
+      )}
+
       <ul className="divide-y divide-border rounded-md border border-border">
         {lines.length === 0 && (
           <li className="p-3 text-sm text-muted">
@@ -222,16 +300,29 @@ export function ServicesPerformed({
         </div>
       )}
 
-      {canInvoice && lines.length > 0 && status !== "draft" && (
-        <Button onClick={invoice} disabled={pending}>
-          {pending ? "Generating…" : "Generate invoice from encounter"}
-        </Button>
-      )}
+      <div className="flex flex-wrap items-center gap-2">
+        {canEditLines && (
+          <>
+            <Button variant="secondary" onClick={saveSummary} disabled={pending}>
+              Save draft
+            </Button>
+            <Button onClick={sign} disabled={pending}>
+              Sign
+            </Button>
+          </>
+        )}
+        {canInvoice && lines.length > 0 && status !== "draft" && (
+          <Button onClick={invoice} disabled={pending}>
+            {pending ? "Generating…" : "Generate invoice from encounter"}
+          </Button>
+        )}
+      </div>
       {canInvoice && lines.length > 0 && status === "draft" && (
         <p className="text-xs text-muted">
           Sign the encounter to enable invoicing from these lines.
         </p>
       )}
+      {message && <p className="text-sm text-muted">{message}</p>}
       {error && <p className="text-sm text-danger">{error}</p>}
     </div>
   );
