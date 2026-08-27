@@ -42,10 +42,17 @@ import {
 } from "@/lib/domain/invoice";
 import { mapSquarePaymentStatus } from "@/lib/domain/square";
 import {
+  cancelTerminalCheckout,
   createSquarePayment,
   createSquareRefund,
+  createTerminalCheckout,
   getSquareConfig,
+  getTerminalCheckout,
 } from "@/lib/square/client";
+import {
+  settleTerminalCheckout,
+  type SquareSettleOutcome,
+} from "@/lib/square/ledger";
 import { squareCardPaymentSchema } from "@/lib/schemas/billing";
 
 export interface BillingResult {
@@ -718,6 +725,222 @@ export async function paySquareCardAction(
     return { ok: false, error: "The card payment did not complete." };
   }
   return { ok: true, id: payment.id };
+}
+
+export interface TerminalPaymentResult {
+  ok: boolean;
+  /** Local payment id, for polling. */
+  id?: string;
+  /** Settled state of the terminal payment after this call. */
+  status?: SquareSettleOutcome;
+  error?: string;
+}
+
+/** Collapse a payment_status onto the settle outcomes the terminal UI shows. */
+function toSettleOutcome(status: string): SquareSettleOutcome {
+  if (status === "pending") return "pending";
+  if (status === "cancelled") return "cancelled";
+  if (status === "failed") return "failed";
+  return "confirmed"; // confirmed and any refund state mean the charge stood
+}
+
+/**
+ * Card-present payment on the Square Terminal (POS) (§10.1). Pushes a
+ * checkout for the invoice's open balance to the paired device; the patient
+ * pays there. Completion arrives via the terminal.checkout.updated webhook
+ * and via checkTerminalPaymentAction polling — both settle idempotently.
+ *
+ * Idempotency mirrors the card flow: the local pending payment row goes
+ * first and its UUID is the Square idempotency key; the returned checkout id
+ * is anchored in payments.reference so webhook/polling can always match it.
+ */
+export async function payTerminalAction(
+  invoiceId: string,
+): Promise<TerminalPaymentResult> {
+  const user = await authorize("invoices_payments", "create");
+  const config = getSquareConfig();
+  if (!config?.terminalDeviceId) {
+    return { ok: false, error: "No Square Terminal is configured." };
+  }
+  const org = await getPrimaryOrganization();
+  if (!org) return { ok: false, error: "Organization not found." };
+
+  const db = getDb();
+  const [invoice] = await db
+    .select()
+    .from(invoices)
+    .where(and(eq(invoices.organizationId, org.id), eq(invoices.id, invoiceId)))
+    .limit(1);
+  if (!invoice) return { ok: false, error: "Invoice not found." };
+  if (!["issued", "partially_paid", "overdue"].includes(invoice.status)) {
+    return { ok: false, error: "Only a confirmed (issued) invoice can be paid." };
+  }
+  if (invoice.balanceCents <= 0) {
+    return { ok: false, error: "This invoice has no open balance." };
+  }
+
+  const amount = invoice.balanceCents;
+
+  const [payment] = await db
+    .insert(payments)
+    .values({
+      organizationId: org.id,
+      patientId: invoice.patientId,
+      method: "square_card",
+      status: "pending",
+      amountCents: amount,
+      currency: invoice.currency,
+      receivedBy: user.dbUserId,
+      externalProvider: "square",
+      metadata: { intendedInvoiceId: invoiceId, channel: "terminal" },
+    })
+    .returning();
+
+  const pushed = await createTerminalCheckout({
+    amountCents: amount,
+    currency: invoice.currency,
+    idempotencyKey: payment.id,
+    referenceId: invoiceId,
+    note: invoice.invoiceNumber ?? undefined,
+  });
+
+  if (!pushed.ok) {
+    await db
+      .update(payments)
+      .set({
+        status: "failed",
+        metadata: {
+          intendedInvoiceId: invoiceId,
+          channel: "terminal",
+          squareError: pushed.error,
+        },
+        updatedAt: new Date(),
+      })
+      .where(eq(payments.id, payment.id));
+    return { ok: false, error: pushed.error };
+  }
+
+  // Anchor the checkout id so webhook and polling can match this payment.
+  await db
+    .update(payments)
+    .set({ reference: pushed.value.checkoutId, updatedAt: new Date() })
+    .where(eq(payments.id, payment.id));
+
+  await recordAudit({
+    organizationId: org.id,
+    actorUserId: user.authId,
+    action: "payment",
+    entityType: "payment",
+    entityId: payment.id,
+    after: {
+      method: "square_card",
+      channel: "terminal",
+      amount,
+      status: "pending",
+      invoiceId,
+      terminalCheckoutId: pushed.value.checkoutId,
+    },
+  });
+
+  revalidatePath(`/billing/${invoiceId}`);
+  revalidatePath("/billing");
+  return { ok: true, id: payment.id, status: "pending" };
+}
+
+/**
+ * Poll a terminal payment: fetches the checkout from Square and settles the
+ * local ledger (confirm + apply + receipt, or cancel). Safe to call
+ * repeatedly and concurrently with the webhook — settlement is guarded.
+ */
+export async function checkTerminalPaymentAction(
+  paymentId: string,
+): Promise<TerminalPaymentResult> {
+  await authorize("invoices_payments", "create");
+  const org = await getPrimaryOrganization();
+  if (!org) return { ok: false, error: "Organization not found." };
+
+  const db = getDb();
+  const [payment] = await db
+    .select()
+    .from(payments)
+    .where(and(eq(payments.organizationId, org.id), eq(payments.id, paymentId)))
+    .limit(1);
+  if (!payment || payment.externalProvider !== "square") {
+    return { ok: false, error: "Terminal payment not found." };
+  }
+  if (payment.status !== "pending") {
+    return { ok: true, id: payment.id, status: toSettleOutcome(payment.status) };
+  }
+  if (!payment.reference) {
+    return { ok: false, error: "This payment has no terminal checkout." };
+  }
+
+  const fetched = await getTerminalCheckout(payment.reference);
+  if (!fetched.ok) return { ok: false, error: fetched.error };
+
+  const outcome = await db.transaction((tx) =>
+    settleTerminalCheckout(tx, fetched.value),
+  );
+  if (outcome !== "pending") {
+    const invoiceId =
+      (payment.metadata as { intendedInvoiceId?: string } | null)
+        ?.intendedInvoiceId ?? null;
+    if (invoiceId) revalidatePath(`/billing/${invoiceId}`);
+    revalidatePath("/billing");
+  }
+  return { ok: true, id: payment.id, status: outcome };
+}
+
+/**
+ * Cancel an in-flight terminal checkout (e.g. the patient changed their
+ * mind). If the device already completed it, the completion wins and this
+ * settles the payment instead.
+ */
+export async function cancelTerminalPaymentAction(
+  paymentId: string,
+): Promise<TerminalPaymentResult> {
+  const user = await authorize("invoices_payments", "create");
+  const org = await getPrimaryOrganization();
+  if (!org) return { ok: false, error: "Organization not found." };
+
+  const db = getDb();
+  const [payment] = await db
+    .select()
+    .from(payments)
+    .where(and(eq(payments.organizationId, org.id), eq(payments.id, paymentId)))
+    .limit(1);
+  if (!payment || payment.externalProvider !== "square" || !payment.reference) {
+    return { ok: false, error: "Terminal payment not found." };
+  }
+  if (payment.status !== "pending") {
+    return { ok: true, id: payment.id, status: toSettleOutcome(payment.status) };
+  }
+
+  const cancelled = await cancelTerminalCheckout(payment.reference);
+  if (!cancelled.ok) {
+    // Cancellation races completion — re-check and settle whatever Square says.
+    return checkTerminalPaymentAction(paymentId);
+  }
+
+  const outcome = await db.transaction((tx) =>
+    settleTerminalCheckout(tx, cancelled.value),
+  );
+
+  await recordAudit({
+    organizationId: org.id,
+    actorUserId: user.authId,
+    action: "payment",
+    entityType: "payment",
+    entityId: payment.id,
+    after: { method: "square_card", channel: "terminal", status: outcome },
+  });
+
+  const invoiceId =
+    (payment.metadata as { intendedInvoiceId?: string } | null)
+      ?.intendedInvoiceId ?? null;
+  if (invoiceId) revalidatePath(`/billing/${invoiceId}`);
+  revalidatePath("/billing");
+  return { ok: true, id: payment.id, status: outcome };
 }
 
 /** FR-PAY-002: apply a payment to an invoice with guardrails. */

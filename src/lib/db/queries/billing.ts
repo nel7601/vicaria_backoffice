@@ -215,6 +215,30 @@ export async function listPendingEtransfersForInvoice(
     );
 }
 
+/** Pending Square Terminal payments pushed for this invoice (§10.1). */
+export async function listPendingTerminalPaymentsForInvoice(
+  organizationId: string,
+  invoiceId: string,
+) {
+  const db = getDb();
+  return db
+    .select({
+      id: payments.id,
+      amountCents: payments.amountCents,
+      receivedAt: payments.receivedAt,
+    })
+    .from(payments)
+    .where(
+      and(
+        eq(payments.organizationId, organizationId),
+        eq(payments.externalProvider, "square"),
+        eq(payments.status, "pending"),
+        sql`${payments.metadata} ->> 'channel' = 'terminal'`,
+        sql`${payments.metadata} ->> 'intendedInvoiceId' = ${invoiceId}`,
+      ),
+    );
+}
+
 export interface PagedInvoicesParams {
   organizationId: string;
   /** Matches invoice number or patient name. */

@@ -82,6 +82,8 @@ export interface SquarePaymentSummary {
   sourceType: string | null;
   /** Our reference_id — set to the invoice id by the checkout action. */
   referenceId: string | null;
+  /** Set by Square when the payment was taken on a Terminal device. */
+  terminalCheckoutId: string | null;
 }
 
 function asString(v: unknown): string | null {
@@ -107,6 +109,7 @@ export function normalizeSquarePayment(obj: unknown): SquarePaymentSummary | nul
     currency: asString(money?.currency),
     sourceType: asString(p.source_type),
     referenceId: asString(p.reference_id),
+    terminalCheckoutId: asString(p.terminal_checkout_id),
   };
 }
 
@@ -123,6 +126,87 @@ export function extractSquarePaymentFromEvent(
   const object = (data as Record<string, unknown>).object;
   if (!object || typeof object !== "object") return null;
   return normalizeSquarePayment((object as Record<string, unknown>).payment);
+}
+
+/** Webhook event types that carry a Terminal checkout object. */
+export function isSquareTerminalEvent(
+  eventType: string | null | undefined,
+): boolean {
+  return (
+    eventType === "terminal.checkout.created" ||
+    eventType === "terminal.checkout.updated"
+  );
+}
+
+/**
+ * Map a Terminal checkout status onto the internal payment_status enum.
+ * PENDING/IN_PROGRESS/CANCEL_REQUESTED are all still in flight on the device.
+ * A timed-out or dismissed checkout arrives as CANCELED.
+ */
+export function mapTerminalCheckoutStatus(
+  status: string | null | undefined,
+): "pending" | "confirmed" | "cancelled" {
+  switch (status) {
+    case "COMPLETED":
+      return "confirmed";
+    case "CANCELED":
+      return "cancelled";
+    default:
+      return "pending";
+  }
+}
+
+export interface TerminalCheckoutSummary {
+  checkoutId: string;
+  status: string | null;
+  amountCents: number | null;
+  currency: string | null;
+  /** Our reference_id — set to the invoice id when the checkout is pushed. */
+  referenceId: string | null;
+  /** Square payment ids produced by the checkout (set when COMPLETED). */
+  paymentIds: string[];
+}
+
+/** Normalize a raw Terminal checkout object (API response or webhook). */
+export function normalizeTerminalCheckout(
+  obj: unknown,
+): TerminalCheckoutSummary | null {
+  if (!obj || typeof obj !== "object") return null;
+  const c = obj as Record<string, unknown>;
+  const id = asString(c.id);
+  if (!id) return null;
+  const money =
+    c.amount_money && typeof c.amount_money === "object"
+      ? (c.amount_money as Record<string, unknown>)
+      : null;
+  const paymentIds = Array.isArray(c.payment_ids)
+    ? c.payment_ids.filter((v): v is string => typeof v === "string")
+    : [];
+  return {
+    checkoutId: id,
+    status: asString(c.status),
+    amountCents: typeof money?.amount === "number" ? money.amount : null,
+    currency: asString(money?.currency),
+    referenceId: asString(c.reference_id),
+    paymentIds,
+  };
+}
+
+/**
+ * Extract the checkout from a `terminal.checkout.*` webhook envelope:
+ * { type, event_id, data: { object: { checkout: {...} } } }.
+ */
+export function extractTerminalCheckoutFromEvent(
+  payload: unknown,
+): TerminalCheckoutSummary | null {
+  if (!payload || typeof payload !== "object") return null;
+  const data = (payload as Record<string, unknown>).data;
+  if (!data || typeof data !== "object") return null;
+  const object = (data as Record<string, unknown>).object;
+  if (!object || typeof object !== "object") return null;
+  return normalizeTerminalCheckout(
+    (object as Record<string, unknown>).checkout,
+  );
 }
 
 export interface SquareApiError {

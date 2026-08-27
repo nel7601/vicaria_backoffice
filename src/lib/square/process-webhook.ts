@@ -2,26 +2,28 @@ import { and, eq } from "drizzle-orm";
 import type { Database } from "@/lib/db";
 import {
   invoices,
-  paymentAllocations,
   payments,
-  receipts,
   squareTransactions,
   webhookEvents,
 } from "@/lib/db/schema";
 import {
   extractSquarePaymentFromEvent,
+  extractTerminalCheckoutFromEvent,
   isSquarePaymentEvent,
+  isSquareTerminalEvent,
   mapSquarePaymentStatus,
   type SquarePaymentSummary,
 } from "@/lib/domain/square";
-import { balanceCents, deriveInvoiceStatus } from "@/lib/domain/invoice";
+import {
+  applySquarePaymentToInvoice,
+  settleTerminalCheckout,
+  type Tx,
+} from "@/lib/square/ledger";
 import { logger } from "@/lib/observability/logger";
-
-type Tx = Parameters<Parameters<Database["transaction"]>[0]>[0];
 
 /**
  * Square webhook processing (spec §10.1): after the raw event is stored
- * idempotently in webhook_events, this maps the Square payment onto our
+ * idempotently in webhook_events, this maps the Square object onto our
  * ledger. Every step is idempotent (NFR-11) — a redelivered or concurrently
  * processed event can never duplicate a payment, allocation or receipt:
  *  - square_transactions upserts on the unique square_payment_id;
@@ -43,6 +45,15 @@ export async function processSquareWebhookEvent(
     } else {
       logger.warn("square.webhook_unparseable", { eventId, eventType });
     }
+  } else if (isSquareTerminalEvent(eventType)) {
+    const checkout = extractTerminalCheckoutFromEvent(payload);
+    if (checkout) {
+      await db.transaction(async (tx) => {
+        await settleTerminalCheckout(tx, checkout);
+      });
+    } else {
+      logger.warn("square.webhook_unparseable", { eventId, eventType });
+    }
   }
   // Other event types (refund.*, dispute.*) are stored for audit/reconciliation
   // but not yet acted on automatically.
@@ -58,8 +69,10 @@ export async function processSquareWebhookEvent(
 async function applySquarePayment(tx: Tx, sq: SquarePaymentSummary) {
   const mapped = mapSquarePaymentStatus(sq.status);
 
-  // Match our payment row by the Square payment id set at charge time.
-  const [local] = await tx
+  // Match our payment row by the Square payment id set at charge time, or —
+  // for Terminal payments whose id we may not have claimed yet — by the
+  // checkout id anchored in payments.reference.
+  let [local] = await tx
     .select()
     .from(payments)
     .where(
@@ -69,6 +82,18 @@ async function applySquarePayment(tx: Tx, sq: SquarePaymentSummary) {
       ),
     )
     .limit(1);
+  if (!local && sq.terminalCheckoutId) {
+    [local] = await tx
+      .select()
+      .from(payments)
+      .where(
+        and(
+          eq(payments.externalProvider, "square"),
+          eq(payments.reference, sq.terminalCheckoutId),
+        ),
+      )
+      .limit(1);
+  }
 
   let paymentId = local?.id ?? null;
   let organizationId = local?.organizationId ?? null;
@@ -79,7 +104,11 @@ async function applySquarePayment(tx: Tx, sq: SquarePaymentSummary) {
       // applies the payment and issues the receipt.
       const flipped = await tx
         .update(payments)
-        .set({ status: "confirmed", updatedAt: new Date() })
+        .set({
+          status: "confirmed",
+          externalId: sq.squarePaymentId,
+          updatedAt: new Date(),
+        })
         .where(and(eq(payments.id, local.id), eq(payments.status, "pending")))
         .returning();
       if (flipped.length > 0) {
@@ -87,7 +116,7 @@ async function applySquarePayment(tx: Tx, sq: SquarePaymentSummary) {
           (local.metadata as { intendedInvoiceId?: string } | null)
             ?.intendedInvoiceId ?? sq.referenceId;
         if (intendedInvoiceId) {
-          await applyToInvoice(tx, {
+          await applySquarePaymentToInvoice(tx, {
             organizationId: local.organizationId,
             paymentId: local.id,
             invoiceId: intendedInvoiceId,
@@ -136,7 +165,7 @@ async function applySquarePayment(tx: Tx, sq: SquarePaymentSummary) {
       if (created) {
         paymentId = created.id;
         organizationId = created.organizationId;
-        await applyToInvoice(tx, {
+        await applySquarePaymentToInvoice(tx, {
           organizationId: invoice.organizationId,
           paymentId: created.id,
           invoiceId: invoice.id,
@@ -182,106 +211,4 @@ async function applySquarePayment(tx: Tx, sq: SquarePaymentSummary) {
         updatedAt: new Date(),
       },
     });
-}
-
-/**
- * Apply a confirmed payment to its invoice and issue the receipt — the same
- * shape as the cash flow in billing actions. Applies at most the open
- * balance; any surplus stays as an unapplied confirmed payment.
- */
-async function applyToInvoice(
-  tx: Tx,
-  params: {
-    organizationId: string;
-    paymentId: string;
-    invoiceId: string;
-    amountCents: number;
-    squarePaymentId: string;
-  },
-) {
-  const [invoice] = await tx
-    .select()
-    .from(invoices)
-    .where(
-      and(
-        eq(invoices.organizationId, params.organizationId),
-        eq(invoices.id, params.invoiceId),
-      ),
-    )
-    .limit(1);
-  if (!invoice || invoice.balanceCents <= 0) return;
-
-  const applied = Math.min(params.amountCents, invoice.balanceCents);
-  await tx.insert(paymentAllocations).values({
-    organizationId: params.organizationId,
-    paymentId: params.paymentId,
-    invoiceId: params.invoiceId,
-    amountCents: applied,
-  });
-  await recomputeInvoice(tx, params.organizationId, params.invoiceId);
-  await tx.insert(receipts).values({
-    organizationId: params.organizationId,
-    paymentId: params.paymentId,
-    invoiceId: params.invoiceId,
-    amountCents: applied,
-    language: invoice.language,
-    snapshot: {
-      invoiceNumber: invoice.invoiceNumber,
-      amountCents: applied,
-      currency: invoice.currency,
-      method: "square_card",
-      squarePaymentId: params.squarePaymentId,
-    },
-  });
-}
-
-/**
- * Recompute paid/balance/status from confirmed allocations, on the SAME
- * executor so uncommitted rows are visible (mirrors billing actions).
- */
-async function recomputeInvoice(
-  tx: Tx,
-  organizationId: string,
-  invoiceId: string,
-) {
-  const [inv] = await tx
-    .select()
-    .from(invoices)
-    .where(
-      and(eq(invoices.organizationId, organizationId), eq(invoices.id, invoiceId)),
-    )
-    .limit(1);
-  if (!inv) return;
-
-  const { sql } = await import("drizzle-orm");
-  const [row] = await tx
-    .select({
-      total: sql<number>`coalesce(sum(${paymentAllocations.amountCents}), 0)::int`,
-    })
-    .from(paymentAllocations)
-    .innerJoin(payments, eq(payments.id, paymentAllocations.paymentId))
-    .where(
-      and(
-        eq(paymentAllocations.invoiceId, invoiceId),
-        eq(payments.status, "confirmed"),
-      ),
-    );
-  const allocated = Number(row?.total ?? 0);
-  const status = deriveInvoiceStatus({
-    issued: inv.invoiceNumber !== null,
-    voided: inv.status === "void",
-    fullyRefunded: false,
-    totalCents: inv.totalCents,
-    allocatedCents: allocated,
-    dueDate: inv.dueDate,
-  });
-  await tx
-    .update(invoices)
-    .set({
-      paidCents: allocated,
-      balanceCents: balanceCents(inv.totalCents, allocated),
-      status,
-      updatedAt: new Date(),
-    })
-    .where(eq(invoices.id, invoiceId));
 }

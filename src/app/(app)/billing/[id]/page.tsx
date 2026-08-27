@@ -9,6 +9,7 @@ import {
   getInvoice,
   listAllocatablePayments,
   listPendingEtransfersForInvoice,
+  listPendingTerminalPaymentsForInvoice,
 } from "@/lib/db/queries/billing";
 import {
   getPrimaryOrganization,
@@ -41,6 +42,9 @@ export default async function InvoiceDetailPage({
   let pendingEtransfers: Awaited<
     ReturnType<typeof listPendingEtransfersForInvoice>
   > = [];
+  let pendingTerminal: Awaited<
+    ReturnType<typeof listPendingTerminalPaymentsForInvoice>
+  > = [];
   let serviceOptions: DraftServiceOption[] = [];
   let dbError: string | null = null;
   try {
@@ -48,9 +52,10 @@ export default async function InvoiceDetailPage({
     if (org) {
       data = await getInvoice(org.id, id);
       if (data) {
-        [allocatable, pendingEtransfers] = await Promise.all([
+        [allocatable, pendingEtransfers, pendingTerminal] = await Promise.all([
           listAllocatablePayments(org.id, data.invoice.patientId),
           listPendingEtransfersForInvoice(org.id, id),
+          listPendingTerminalPaymentsForInvoice(org.id, id),
         ]);
         if (data.invoice.status === "draft") {
           serviceOptions = (await listServicesWithPrice(org.id))
@@ -205,6 +210,8 @@ export default async function InvoiceDetailPage({
               allocatable={allocatable}
               pendingEtransfers={pendingEtransfers}
               square={square}
+              terminalEnabled={!!squareServer?.terminalDeviceId}
+              pendingTerminal={pendingTerminal}
             />
           </div>
         </Card>

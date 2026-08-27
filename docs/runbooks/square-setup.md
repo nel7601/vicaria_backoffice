@@ -1,4 +1,4 @@
-# Square setup (card payments)
+# Square setup (card payments & POS terminal)
 
 Card payments (spec §10.1) use two Square pieces:
 
@@ -27,6 +27,7 @@ source for reconciliation.
 | `SQUARE_LOCATION_ID` | server (optional) | Falls back to `NEXT_PUBLIC_SQUARE_LOCATION_ID` |
 | `NEXT_PUBLIC_SQUARE_APPLICATION_ID` | browser | Developer Dashboard → application → Credentials |
 | `NEXT_PUBLIC_SQUARE_LOCATION_ID` | browser | Dashboard → Locations (must be the charging location) |
+| `SQUARE_TERMINAL_DEVICE_ID` | server (optional) | Device id of the paired Square Terminal — enables the POS option |
 
 The card option on the invoice page stays disabled ("not configured") until
 `SQUARE_ACCESS_TOKEN`, a location id and `NEXT_PUBLIC_SQUARE_APPLICATION_ID`
@@ -37,9 +38,42 @@ tokens and signature keys — never mix them.
 
 1. Developer Dashboard → your application → Webhooks → Subscriptions.
 2. Add the endpoint `https://<host>/api/webhooks/square`.
-3. Subscribe at least to `payment.created` and `payment.updated`
+3. Subscribe at least to `payment.created`, `payment.updated` and — when the
+   POS is used — `terminal.checkout.updated`
    (`refund.created`/`refund.updated` are stored for audit).
 4. Copy the **Signature key** into `SQUARE_WEBHOOK_SIGNATURE_KEY`.
+
+## POS (Square Terminal)
+
+The **POS (Terminal)** option on the invoice page pushes a Terminal API
+checkout for the open balance to the paired device; the patient taps or
+inserts their card on the terminal. The backoffice polls Square (and listens
+to `terminal.checkout.updated`) and, on completion, confirms the payment,
+applies it to the invoice and issues the receipt automatically. The checkout
+can be cancelled from the invoice page while it is still on the device, and
+it times out on its own if nobody pays (Square's default is ~5 minutes).
+
+To pair the terminal and get its device id:
+
+1. `POST /v2/devices/codes` with `"product_type": "TERMINAL_API"` and your
+   `location_id` (Developer Dashboard → API Explorer works well for this).
+2. On the Square Terminal: **Settings → Device code** (under General),
+   enter the code returned in step 1.
+3. Read the paired device id from `GET /v2/devices/codes/{id}` (`device_id`)
+   — or from the `device.code.paired` webhook — and set it as
+   `SQUARE_TERMINAL_DEVICE_ID`.
+
+Notes:
+
+- Tipping is disabled in the checkout so the captured amount always equals
+  the invoice charge; enable it deliberately in
+  `src/lib/square/client.ts` if the practice wants tips.
+- **Interac debit** payments (Canada) cannot be refunded from the dashboard
+  or the Refunds API — the cardholder must be present and the refund done on
+  the terminal itself. Credit card refunds work from the billing screen.
+- In sandbox there is no physical device: Square provides simulated test
+  device ids that auto-complete or auto-fail a checkout (see "Testing in the
+  Sandbox" for the Terminal API in Square's docs).
 
 The endpoint returns 503 while unconfigured, 401 on a bad signature, and 5xx
 when processing fails so Square redelivers (processing is idempotent).
