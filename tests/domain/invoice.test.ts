@@ -114,3 +114,58 @@ describe("cash discount (tax-equivalent, compliant)", () => {
     expect(cashDiscountCents(15000, 0)).toBe(0);
   });
 });
+
+describe("applyCashDiscount lands exactly on the sticker price", () => {
+  it("fixes the $100 @ 13% case (was $100.01)", async () => {
+    const { applyCashDiscount, computeInvoiceTotals, CASH_ROUNDING_DESCRIPTION } =
+      await import("@/lib/domain/invoice");
+    const { lines, adjustmentCents } = applyCashDiscount([
+      { quantity: 1, unitPriceCents: 10000, taxRateBps: 1300 },
+    ]);
+    const items =
+      adjustmentCents > 0
+        ? [
+            ...lines,
+            {
+              quantity: 1,
+              unitPriceCents: adjustmentCents,
+              taxRateBps: 0,
+              description: CASH_ROUNDING_DESCRIPTION,
+            },
+          ]
+        : lines;
+    expect(computeInvoiceTotals(items).totalCents).toBe(10000);
+  });
+
+  it("hits the target across many price points", async () => {
+    const { applyCashDiscount, computeInvoiceTotals } = await import(
+      "@/lib/domain/invoice"
+    );
+    for (const price of [10000, 15000, 9900, 12345, 20000, 7550, 100]) {
+      const { lines, adjustmentCents } = applyCashDiscount([
+        { quantity: 1, unitPriceCents: price, taxRateBps: 1300 },
+      ]);
+      const total =
+        computeInvoiceTotals(lines).totalCents + adjustmentCents;
+      expect(total).toBe(price);
+      // Tax is still charged on the discounted base.
+      expect(computeInvoiceTotals(lines).taxCents).toBeGreaterThan(0);
+    }
+  });
+
+  it("handles multi-line invoices with mixed tax rates", async () => {
+    const { applyCashDiscount, computeInvoiceTotals } = await import(
+      "@/lib/domain/invoice"
+    );
+    const input = [
+      { quantity: 2, unitPriceCents: 7500, discountCents: 0, taxRateBps: 1300 },
+      { quantity: 1, unitPriceCents: 9000, discountCents: 0, taxRateBps: 1300 },
+      { quantity: 1, unitPriceCents: 5000, discountCents: 0, taxRateBps: 0 }, // exempt
+    ];
+    const target = 2 * 7500 + 9000 + 5000;
+    const { lines, adjustmentCents } = applyCashDiscount(input);
+    expect(computeInvoiceTotals(lines).totalCents + adjustmentCents).toBe(target);
+    // The exempt line keeps no discount.
+    expect(lines[2].discountCents).toBe(0);
+  });
+});

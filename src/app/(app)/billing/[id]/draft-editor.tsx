@@ -5,7 +5,11 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { inputClass } from "@/components/ui/field";
 import { formatCents } from "@/lib/domain/money";
-import { cashDiscountCents, computeInvoiceTotals } from "@/lib/domain/invoice";
+import {
+  applyCashDiscount,
+  CASH_ROUNDING_DESCRIPTION,
+  computeInvoiceTotals,
+} from "@/lib/domain/invoice";
 import { updateInvoiceDraftAction } from "../actions";
 
 export interface DraftItem {
@@ -68,24 +72,45 @@ export function DraftEditor({
   const [editing, setEditing] = useState(false);
   const [language, setLanguage] = useState<"en" | "es">(initialLanguage);
   const [notes, setNotes] = useState(initialNotes ?? "");
-  // Toggle preserved from stored per-line discounts.
-  const [cashDiscount, setCashDiscount] = useState(
-    items.some((i) => i.discountCents > 0),
+  // Toggle preserved from stored per-line discounts; the stored rounding
+  // line is stripped so recomputing never duplicates it.
+  const editableItems = items.filter(
+    (i) => i.description !== CASH_ROUNDING_DESCRIPTION,
   );
-  const [lines, setLines] = useState<Line[]>(items.map(toLine));
+  const [cashDiscount, setCashDiscount] = useState(
+    editableItems.some((i) => i.discountCents > 0),
+  );
+  const [lines, setLines] = useState<Line[]>(editableItems.map(toLine));
   const [error, setError] = useState<string | null>(null);
 
-  function lineWithDiscount(l: Line) {
-    const c = lineCents(l);
-    const gross = l.quantity * c.unitPriceCents;
-    return {
-      quantity: l.quantity,
-      ...c,
-      discountCents: cashDiscount ? cashDiscountCents(gross, c.taxRateBps) : 0,
-    };
+  function buildItems() {
+    const raw = lines
+      .filter((l) => l.description.trim())
+      .map((l) => ({
+        serviceId: l.serviceId,
+        description: l.description,
+        quantity: Number(l.quantity),
+        ...lineCents(l),
+        discountCents: 0,
+      }));
+    if (!cashDiscount) return raw;
+    const { lines: discounted, adjustmentCents } = applyCashDiscount(raw);
+    if (adjustmentCents <= 0) return discounted;
+    return [
+      ...discounted,
+      {
+        serviceId: "",
+        description: CASH_ROUNDING_DESCRIPTION,
+        quantity: 1,
+        unitPriceCents: adjustmentCents,
+        taxRateBps: 0,
+        discountCents: 0,
+      },
+    ];
   }
 
-  const totals = computeInvoiceTotals(lines.map(lineWithDiscount));
+  const builtItems = buildItems();
+  const totals = computeInvoiceTotals(builtItems);
 
   function updateLine(i: number, patch: Partial<Line>) {
     setLines((ls) => ls.map((l, idx) => (idx === i ? { ...l, ...patch } : l)));
@@ -111,13 +136,10 @@ export function DraftEditor({
       const res = await updateInvoiceDraftAction(invoiceId, {
         language,
         notes,
-        items: lines
-          .filter((l) => l.description.trim())
-          .map((l) => ({
-            serviceId: l.serviceId || undefined,
-            description: l.description,
-            ...lineWithDiscount(l),
-          })),
+        items: builtItems.map((it) => ({
+          ...it,
+          serviceId: it.serviceId || undefined,
+        })),
       });
       if (res.ok) {
         setEditing(false);

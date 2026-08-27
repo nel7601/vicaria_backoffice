@@ -5,7 +5,11 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { inputClass } from "@/components/ui/field";
 import { formatCents } from "@/lib/domain/money";
-import { cashDiscountCents, computeInvoiceTotals } from "@/lib/domain/invoice";
+import {
+  applyCashDiscount,
+  CASH_ROUNDING_DESCRIPTION,
+  computeInvoiceTotals,
+} from "@/lib/domain/invoice";
 import { createInvoiceAction } from "./actions";
 
 export interface InvoiceServiceOption {
@@ -61,19 +65,37 @@ export function NewInvoiceForm({
   const [lines, setLines] = useState<Line[]>([{ ...EMPTY_LINE }]);
   const [error, setError] = useState<string | null>(null);
 
-  function lineWithDiscount(l: Line) {
-    const c = lineCents(l);
-    const gross = l.quantity * c.unitPriceCents;
-    return {
-      quantity: l.quantity,
-      ...c,
-      discountCents: cashDiscount ? cashDiscountCents(gross, c.taxRateBps) : 0,
-    };
+  // Build submit-ready items; with the cash discount on, discounts are
+  // computed per line and a zero-tax rounding line keeps the total EXACTLY
+  // at the pre-tax sticker price.
+  function buildItems() {
+    const raw = lines
+      .filter((l) => l.serviceId)
+      .map((l) => ({
+        serviceId: l.serviceId,
+        description: l.description,
+        quantity: Number(l.quantity),
+        ...lineCents(l),
+        discountCents: 0,
+      }));
+    if (!cashDiscount) return raw;
+    const { lines: discounted, adjustmentCents } = applyCashDiscount(raw);
+    if (adjustmentCents <= 0) return discounted;
+    return [
+      ...discounted,
+      {
+        serviceId: "",
+        description: CASH_ROUNDING_DESCRIPTION,
+        quantity: 1,
+        unitPriceCents: adjustmentCents,
+        taxRateBps: 0,
+        discountCents: 0,
+      },
+    ];
   }
 
-  const totals = computeInvoiceTotals(
-    lines.filter((l) => l.serviceId).map(lineWithDiscount),
-  );
+  const builtItems = buildItems();
+  const totals = computeInvoiceTotals(builtItems);
 
   function updateLine(i: number, patch: Partial<Line>) {
     setLines((ls) => ls.map((l, idx) => (idx === i ? { ...l, ...patch } : l)));
@@ -91,16 +113,14 @@ export function NewInvoiceForm({
 
   function submit() {
     setError(null);
-    const valid = lines.filter((l) => l.serviceId);
     startTransition(async () => {
       const res = await createInvoiceAction({
         patientId,
         language,
         notes,
-        items: valid.map((l) => ({
-          serviceId: l.serviceId,
-          description: l.description,
-          ...lineWithDiscount(l),
+        items: builtItems.map((it) => ({
+          ...it,
+          serviceId: it.serviceId || undefined,
         })),
       });
       if (res.ok && res.id) {

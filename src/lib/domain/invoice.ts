@@ -171,3 +171,48 @@ export function cashDiscountCents(
   const r = taxRateBps / 10000;
   return Math.round((grossCents * r) / (1 + r));
 }
+
+/** Fixed description for the rounding line added by the cash discount. */
+export const CASH_ROUNDING_DESCRIPTION = "Rounding adjustment";
+
+/**
+ * Apply the tax-equivalent cash discount to a set of lines so the invoice
+ * total lands EXACTLY on the pre-tax sticker price. Per-line rounding of
+ * discount and tax can overshoot/undershoot by a cent (e.g. $100 → $100.01),
+ * so this nudges discounts down to get at-or-below the target and reports
+ * the remaining cents as a zero-tax rounding adjustment line to add.
+ */
+export function applyCashDiscount<T extends InvoiceLine>(
+  lines: T[],
+): { lines: T[]; adjustmentCents: number } {
+  const target = lines.reduce(
+    (sum, l) => sum + l.quantity * l.unitPriceCents,
+    0,
+  );
+  let adjusted = lines.map((l) => ({
+    ...l,
+    discountCents: cashDiscountCents(
+      l.quantity * l.unitPriceCents,
+      l.taxRateBps ?? 0,
+    ),
+  }));
+  let total = computeInvoiceTotals(adjusted).totalCents;
+
+  // Bump a taxed line's discount by a cent at a time until total <= target.
+  let guard = 0;
+  while (total > target && guard < 10) {
+    const idx = adjusted.findIndex(
+      (l) =>
+        (l.taxRateBps ?? 0) > 0 &&
+        (l.discountCents ?? 0) < l.quantity * l.unitPriceCents,
+    );
+    if (idx === -1) break;
+    adjusted = adjusted.map((l, i) =>
+      i === idx ? { ...l, discountCents: (l.discountCents ?? 0) + 1 } : l,
+    );
+    total = computeInvoiceTotals(adjusted).totalCents;
+    guard++;
+  }
+
+  return { lines: adjusted, adjustmentCents: Math.max(0, target - total) };
+}
