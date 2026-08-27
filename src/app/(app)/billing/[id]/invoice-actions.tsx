@@ -14,6 +14,10 @@ import {
   verifyEtransferAction,
   voidInvoiceAction,
 } from "../actions";
+import {
+  SquarePaymentForm,
+  type SquareClientConfig,
+} from "./square-payment-form";
 
 export interface PendingEtransfer {
   id: string;
@@ -26,7 +30,8 @@ export interface PendingEtransfer {
  * Guided billing flow (spec §7.1/§13):
  *   pre-invoice (draft) → Confirm & issue → Pay (method) → receipt.
  * Cash confirms/applies/receipts in one step; e-transfer waits for Verify
- * (then auto-applies); card via Square is prepared but not enabled yet.
+ * (then auto-applies); card charges via Square when the integration is
+ * configured (`square` is null otherwise and the option stays disabled).
  */
 export function InvoiceActions({
   invoiceId,
@@ -34,12 +39,14 @@ export function InvoiceActions({
   balanceCents,
   allocatable,
   pendingEtransfers,
+  square,
 }: {
   invoiceId: string;
   status: string;
   balanceCents: number;
   allocatable: { id: string; method: string; remainingCents: number }[];
   pendingEtransfers: PendingEtransfer[];
+  square: SquareClientConfig | null;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -140,23 +147,26 @@ export function InvoiceActions({
                 { value: "e_transfer", label: "e-Transfer" },
                 { value: "square_card", label: "Card (Square)" },
               ] as const
-            ).map((m) => (
-              <button
-                key={m.value}
-                onClick={() => setMethod(m.value)}
-                disabled={m.value === "square_card"}
-                className={`rounded-lg border px-4 py-2 text-sm font-medium transition ${
-                  method === m.value
-                    ? "border-primary bg-primary-soft text-primary-hover"
-                    : "border-border hover:bg-warm"
-                } ${m.value === "square_card" ? "cursor-not-allowed opacity-50" : ""}`}
-              >
-                {m.label}
-                {m.value === "square_card" && (
-                  <span className="ml-1 text-xs text-muted">coming soon</span>
-                )}
-              </button>
-            ))}
+            ).map((m) => {
+              const cardDisabled = m.value === "square_card" && !square;
+              return (
+                <button
+                  key={m.value}
+                  onClick={() => setMethod(m.value)}
+                  disabled={cardDisabled}
+                  className={`rounded-lg border px-4 py-2 text-sm font-medium transition ${
+                    method === m.value
+                      ? "border-primary bg-primary-soft text-primary-hover"
+                      : "border-border hover:bg-warm"
+                  } ${cardDisabled ? "cursor-not-allowed opacity-50" : ""}`}
+                >
+                  {m.label}
+                  {cardDisabled && (
+                    <span className="ml-1 text-xs text-muted">not configured</span>
+                  )}
+                </button>
+              );
+            })}
           </div>
 
           {method === "e_transfer" && (
@@ -180,25 +190,33 @@ export function InvoiceActions({
             </div>
           )}
 
-          <Button
-            className="mt-3"
-            disabled={pending || method === "square_card"}
-            onClick={() =>
-              run(
-                () =>
-                  payInvoiceAction(invoiceId, {
-                    method,
-                    etransferSenderName: senderName,
-                    reference,
-                  }),
-                method === "cash"
-                  ? "Paid — receipt issued."
-                  : "E-transfer registered — verify it once it arrives.",
-              )
-            }
-          >
-            {pending ? "Processing…" : "Confirm payment"}
-          </Button>
+          {method === "square_card" && square ? (
+            <SquarePaymentForm
+              invoiceId={invoiceId}
+              amountCents={balanceCents}
+              config={square}
+            />
+          ) : (
+            <Button
+              className="mt-3"
+              disabled={pending || method === "square_card"}
+              onClick={() =>
+                run(
+                  () =>
+                    payInvoiceAction(invoiceId, {
+                      method,
+                      etransferSenderName: senderName,
+                      reference,
+                    }),
+                  method === "cash"
+                    ? "Paid — receipt issued."
+                    : "E-transfer registered — verify it once it arrives.",
+                )
+              }
+            >
+              {pending ? "Processing…" : "Confirm payment"}
+            </Button>
+          )}
           {method === "e_transfer" && (
             <p className="mt-2 text-xs text-muted">
               The invoice stays open until the transfer is verified; it is then
