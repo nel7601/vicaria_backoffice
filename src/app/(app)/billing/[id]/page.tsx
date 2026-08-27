@@ -13,8 +13,10 @@ import {
   getPrimaryOrganization,
   listServicesWithPrice,
 } from "@/lib/db/queries/organization";
+import { getSquareConfig } from "@/lib/square/client";
 import { InvoiceActions } from "./invoice-actions";
 import { DraftEditor, type DraftServiceOption } from "./draft-editor";
+import type { SquareClientConfig } from "./square-payment-form";
 
 export default async function InvoiceDetailPage({
   params,
@@ -77,6 +79,19 @@ export default async function InvoiceDetailPage({
 
   const { invoice, items, allocations, patient } = data;
   const canUpdate = can(user.roles, "invoices_payments", "update");
+
+  // Card via Square is offered only when both the server credentials and the
+  // browser SDK ids are configured. Application/location ids are public.
+  const squareServer = getSquareConfig();
+  const squareAppId = process.env.NEXT_PUBLIC_SQUARE_APPLICATION_ID;
+  const square: SquareClientConfig | null =
+    squareServer && squareAppId
+      ? {
+          applicationId: squareAppId,
+          locationId: squareServer.locationId,
+          environment: squareServer.environment,
+        }
+      : null;
 
   return (
     <div className="space-y-6">
@@ -185,6 +200,7 @@ export default async function InvoiceDetailPage({
               balanceCents={invoice.balanceCents}
               allocatable={allocatable}
               pendingEtransfers={pendingEtransfers}
+              square={square}
             />
           </div>
         </Card>

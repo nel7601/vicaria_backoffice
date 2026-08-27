@@ -21,6 +21,8 @@ Complete and sign off before enabling production access.
 
 - `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` (client-safe).
 - `SUPABASE_SERVICE_ROLE_KEY`, `DATABASE_URL` (server only).
-- `SQUARE_ACCESS_TOKEN`, `SQUARE_WEBHOOK_SIGNATURE_KEY`, `SQUARE_ENVIRONMENT=production`.
+- `SQUARE_ACCESS_TOKEN`, `SQUARE_WEBHOOK_SIGNATURE_KEY`, `SQUARE_ENVIRONMENT=production`,
+  `NEXT_PUBLIC_SQUARE_APPLICATION_ID`, `NEXT_PUBLIC_SQUARE_LOCATION_ID`
+  (see `docs/runbooks/square-setup.md`).
 - `EMAIL_PROVIDER_API_KEY`, `SENTRY_DSN`.
 - Supabase project region = Canada (A-05); Vercel function region = yul1.
