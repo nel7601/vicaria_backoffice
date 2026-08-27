@@ -18,6 +18,7 @@ import {
   SquarePaymentForm,
   type SquareClientConfig,
 } from "./square-payment-form";
+import { TerminalPayment } from "./terminal-payment";
 
 export interface PendingEtransfer {
   id: string;
@@ -40,6 +41,8 @@ export function InvoiceActions({
   allocatable,
   pendingEtransfers,
   square,
+  terminalEnabled,
+  pendingTerminal,
 }: {
   invoiceId: string;
   status: string;
@@ -47,13 +50,15 @@ export function InvoiceActions({
   allocatable: { id: string; method: string; remainingCents: number }[];
   pendingEtransfers: PendingEtransfer[];
   square: SquareClientConfig | null;
+  terminalEnabled: boolean;
+  pendingTerminal: { id: string; amountCents: number }[];
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [message, setMessage] = useState<string | null>(null);
-  const [method, setMethod] = useState<"cash" | "e_transfer" | "square_card">(
-    "cash",
-  );
+  const [method, setMethod] = useState<
+    "cash" | "e_transfer" | "square_card" | "square_pos"
+  >("cash");
   const [senderName, setSenderName] = useState("");
   const [reference, setReference] = useState("");
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -134,8 +139,25 @@ export function InvoiceActions({
         </div>
       )}
 
+      {/* Terminal checkout already on the device — resume watching it */}
+      {pendingTerminal.length > 0 && (
+        <div className="rounded-md border border-ring/40 bg-ring/5 p-4">
+          <div className="text-sm font-medium">
+            Payment in progress on the Square Terminal
+          </div>
+          <TerminalPayment
+            invoiceId={invoiceId}
+            amountCents={pendingTerminal[0].amountCents}
+            pendingPaymentId={pendingTerminal[0].id}
+          />
+        </div>
+      )}
+
       {/* Step 2 — pay */}
-      {isOpen && hasBalance && pendingEtransfers.length === 0 && (
+      {isOpen &&
+        hasBalance &&
+        pendingEtransfers.length === 0 &&
+        pendingTerminal.length === 0 && (
         <div className="rounded-md border border-border p-4">
           <div className="text-sm font-semibold">
             Pay {formatCents(balanceCents)}
@@ -146,9 +168,12 @@ export function InvoiceActions({
                 { value: "cash", label: "Cash" },
                 { value: "e_transfer", label: "e-Transfer" },
                 { value: "square_card", label: "Card (Square)" },
+                { value: "square_pos", label: "POS (Terminal)" },
               ] as const
             ).map((m) => {
-              const cardDisabled = m.value === "square_card" && !square;
+              const cardDisabled =
+                (m.value === "square_card" && !square) ||
+                (m.value === "square_pos" && !terminalEnabled);
               return (
                 <button
                   key={m.value}
@@ -190,7 +215,9 @@ export function InvoiceActions({
             </div>
           )}
 
-          {method === "square_card" && square ? (
+          {method === "square_pos" && terminalEnabled ? (
+            <TerminalPayment invoiceId={invoiceId} amountCents={balanceCents} />
+          ) : method === "square_card" && square ? (
             <SquarePaymentForm
               invoiceId={invoiceId}
               amountCents={balanceCents}
@@ -199,7 +226,9 @@ export function InvoiceActions({
           ) : (
             <Button
               className="mt-3"
-              disabled={pending || method === "square_card"}
+              disabled={
+                pending || method === "square_card" || method === "square_pos"
+              }
               onClick={() =>
                 run(
                   () =>
