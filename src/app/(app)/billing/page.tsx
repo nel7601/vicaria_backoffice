@@ -165,7 +165,7 @@ export default async function BillingPage() {
       </Card>
 
       {canCreate && !dbError && (
-        <div className="w-full">
+        <div className="flex w-full justify-end">
           <RecordPaymentForm patients={patients} />
         </div>
       )}
