@@ -388,17 +388,26 @@ export default async function ClinicalRecordPage({
                     </div>
                   </div>
                   <dl className="mt-3 grid grid-cols-1 gap-x-8 gap-y-2 text-sm sm:grid-cols-2">
-                    {fields.map((f) => (
-                      <div
-                        key={f.key}
-                        className="flex justify-between gap-4 sm:block"
-                      >
-                        <dt className="text-muted">{f.label}</dt>
-                        <dd className="whitespace-pre-wrap">
-                          {answerText(item.answers[f.key])}
-                        </dd>
-                      </div>
-                    ))}
+                    {fields.map((f) =>
+                      f.type === "heading" ? (
+                        <div
+                          key={f.key}
+                          className="border-b border-border pb-1 pt-2 font-semibold sm:col-span-2"
+                        >
+                          {f.label}
+                        </div>
+                      ) : (
+                        <div
+                          key={f.key}
+                          className="flex justify-between gap-4 sm:block"
+                        >
+                          <dt className="text-muted">{f.label}</dt>
+                          <dd className="whitespace-pre-wrap">
+                            {answerText(item.answers[f.key])}
+                          </dd>
+                        </div>
+                      ),
+                    )}
                     {fields.length === 0 && (
                       <div className="text-muted">No fields in this version.</div>
                     )}

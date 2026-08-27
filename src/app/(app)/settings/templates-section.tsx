@@ -30,6 +30,7 @@ const FIELD_TYPES = [
   "select",
   "date",
   "checkbox",
+  "heading",
 ] as const;
 
 function slugify(label: string): string {

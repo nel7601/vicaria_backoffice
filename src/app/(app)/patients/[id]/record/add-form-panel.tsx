@@ -129,20 +129,29 @@ export function AddFormPanel({
           {selected.fields.length === 0 && (
             <p className="text-sm text-muted">This form has no fields.</p>
           )}
-          {selected.fields.map((f) => (
-            <Field
-              key={f.key}
-              label={f.label}
-              htmlFor={`f-${f.key}`}
-              error={errors[f.key]}
-            >
-              <TemplateFieldInput
-                field={f}
-                value={answers[f.key]}
-                onChange={(v) => setAnswers((a) => ({ ...a, [f.key]: v }))}
-              />
-            </Field>
-          ))}
+          {selected.fields.map((f) =>
+            f.type === "heading" ? (
+              <h3
+                key={f.key}
+                className="border-b border-border pb-1 pt-2 text-sm font-semibold"
+              >
+                {f.label}
+              </h3>
+            ) : (
+              <Field
+                key={f.key}
+                label={f.label}
+                htmlFor={`f-${f.key}`}
+                error={errors[f.key]}
+              >
+                <TemplateFieldInput
+                  field={f}
+                  value={answers[f.key]}
+                  onChange={(v) => setAnswers((a) => ({ ...a, [f.key]: v }))}
+                />
+              </Field>
+            ),
+          )}
           {error && <p className="text-sm text-danger">{error}</p>}
           <Button onClick={save} disabled={pending || !filledAt}>
             {pending ? "Saving…" : "Save form"}

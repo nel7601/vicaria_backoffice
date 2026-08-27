@@ -113,20 +113,29 @@ export function EditableFormEntry({
 
       {editing ? (
         <div className="mt-3 space-y-4">
-          {fields.map((f) => (
-            <Field
-              key={f.key}
-              label={f.label}
-              htmlFor={`f-${f.key}`}
-              error={errors[f.key]}
-            >
-              <TemplateFieldInput
-                field={f}
-                value={answers[f.key]}
-                onChange={(v) => setAnswers((a) => ({ ...a, [f.key]: v }))}
-              />
-            </Field>
-          ))}
+          {fields.map((f) =>
+            f.type === "heading" ? (
+              <h3
+                key={f.key}
+                className="border-b border-border pb-1 pt-2 text-sm font-semibold"
+              >
+                {f.label}
+              </h3>
+            ) : (
+              <Field
+                key={f.key}
+                label={f.label}
+                htmlFor={`f-${f.key}`}
+                error={errors[f.key]}
+              >
+                <TemplateFieldInput
+                  field={f}
+                  value={answers[f.key]}
+                  onChange={(v) => setAnswers((a) => ({ ...a, [f.key]: v }))}
+                />
+              </Field>
+            ),
+          )}
           {error && <p className="text-sm text-danger">{error}</p>}
           <div className="flex gap-2">
             <Button onClick={save} disabled={pending || !filledAt}>
@@ -139,12 +148,23 @@ export function EditableFormEntry({
         </div>
       ) : (
         <dl className="mt-3 grid grid-cols-1 gap-x-8 gap-y-2 text-sm sm:grid-cols-2">
-          {fields.map((f) => (
-            <div key={f.key} className="flex justify-between gap-4 sm:block">
-              <dt className="text-muted">{f.label}</dt>
-              <dd className="whitespace-pre-wrap">{answerText(answers[f.key])}</dd>
-            </div>
-          ))}
+          {fields.map((f) =>
+            f.type === "heading" ? (
+              <div
+                key={f.key}
+                className="border-b border-border pb-1 pt-2 font-semibold sm:col-span-2"
+              >
+                {f.label}
+              </div>
+            ) : (
+              <div key={f.key} className="flex justify-between gap-4 sm:block">
+                <dt className="text-muted">{f.label}</dt>
+                <dd className="whitespace-pre-wrap">
+                  {answerText(answers[f.key])}
+                </dd>
+              </div>
+            ),
+          )}
           {fields.length === 0 && (
             <div className="text-muted">No fields in this version.</div>
           )}

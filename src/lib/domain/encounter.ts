@@ -55,7 +55,9 @@ export type FieldType =
   | "scale"
   | "number"
   | "date"
-  | "checkbox";
+  | "checkbox"
+  /** Section title — renders as a subheading, collects no answer. */
+  | "heading";
 
 export interface TemplateField {
   key: string;

@@ -11,7 +11,16 @@ export const templateFieldSchema = z
   .object({
     key: z.string().trim().min(1).max(60).regex(/^[a-z0-9_]+$/, "Invalid key"),
     label: z.string().trim().min(1, "Field label required").max(120),
-    type: z.enum(["text", "textarea", "number", "scale", "select", "date", "checkbox"]),
+    type: z.enum([
+      "text",
+      "textarea",
+      "number",
+      "scale",
+      "select",
+      "date",
+      "checkbox",
+      "heading",
+    ]),
     required: z.boolean().optional(),
     options: z.array(z.string().trim().min(1).max(80)).optional(),
     min: z.number().int().optional(),

@@ -17,6 +17,8 @@ export function TemplateFieldInput({
 }) {
   const common = { id: `f-${f.key}`, disabled };
   switch (f.type) {
+    case "heading":
+      return null;
     case "textarea":
       return (
         <textarea
