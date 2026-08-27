@@ -52,6 +52,18 @@ export const recordPaymentSchema = z.object({
 
 export type RecordPaymentInput = z.infer<typeof recordPaymentSchema>;
 
+/**
+ * Card payment via Square (§10.1). `sourceId` is the one-time token produced
+ * by the Web Payments SDK in the browser — card data never reaches our server.
+ */
+export const squareCardPaymentSchema = z.object({
+  sourceId: z.string().trim().min(1, "Card token is required").max(500),
+  /** SCA/3-D Secure verification token, when the SDK produced one. */
+  verificationToken: z.string().trim().max(500).optional().or(z.literal("")),
+});
+
+export type SquareCardPaymentInput = z.infer<typeof squareCardPaymentSchema>;
+
 export const allocateSchema = z.object({
   paymentId: z.string().uuid(),
   invoiceId: z.string().uuid(),

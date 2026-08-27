@@ -14,6 +14,7 @@ import {
   payments,
   receipts,
   refunds,
+  squareTransactions,
 } from "@/lib/db/schema";
 import { getPrimaryOrganization } from "@/lib/db/queries/organization";
 import {
@@ -39,6 +40,13 @@ import {
   formatInvoiceNumber,
   receiptableCents,
 } from "@/lib/domain/invoice";
+import { mapSquarePaymentStatus } from "@/lib/domain/square";
+import {
+  createSquarePayment,
+  createSquareRefund,
+  getSquareConfig,
+} from "@/lib/square/client";
+import { squareCardPaymentSchema } from "@/lib/schemas/billing";
 
 export interface BillingResult {
   ok: boolean;
@@ -413,9 +421,11 @@ export async function payInvoiceAction(
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
   }
   if (parsed.data.method === "square_card") {
+    // Card payments need the tokenized card from the Web Payments SDK; the UI
+    // calls paySquareCardAction with it instead of this generic action.
     return {
       ok: false,
-      error: "Card payments via Square are coming soon — use cash or e-transfer.",
+      error: "Card payments must be taken through the card form.",
     };
   }
   const org = await getPrimaryOrganization();
@@ -522,6 +532,192 @@ export async function payInvoiceAction(
   revalidatePath(`/billing/${invoiceId}`);
   revalidatePath("/billing");
   return { ok: true, id: invoiceId };
+}
+
+/**
+ * Card payment via Square (§10.1, FR-PAY-001). The browser tokenizes the card
+ * with the Web Payments SDK and sends the one-time `sourceId`; this action
+ * charges it for the invoice's open balance.
+ *
+ * Idempotency: the local pending payment row is created FIRST and its UUID is
+ * the Square idempotency key — a retry after a crash or timeout can never
+ * charge the card twice (NFR-11). If the charge succeeds but this process
+ * dies before confirming locally, the webhook confirms and applies the
+ * payment (it carries our invoice id in `reference_id`).
+ */
+export async function paySquareCardAction(
+  invoiceId: string,
+  raw: unknown,
+): Promise<BillingResult> {
+  const user = await authorize("invoices_payments", "create");
+  const parsed = squareCardPaymentSchema.safeParse(raw);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
+  }
+  if (!getSquareConfig()) {
+    return { ok: false, error: "Square is not configured." };
+  }
+  const org = await getPrimaryOrganization();
+  if (!org) return { ok: false, error: "Organization not found." };
+
+  const db = getDb();
+  const [invoice] = await db
+    .select()
+    .from(invoices)
+    .where(and(eq(invoices.organizationId, org.id), eq(invoices.id, invoiceId)))
+    .limit(1);
+  if (!invoice) return { ok: false, error: "Invoice not found." };
+  if (!["issued", "partially_paid", "overdue"].includes(invoice.status)) {
+    return { ok: false, error: "Only a confirmed (issued) invoice can be paid." };
+  }
+  if (invoice.balanceCents <= 0) {
+    return { ok: false, error: "This invoice has no open balance." };
+  }
+
+  const amount = invoice.balanceCents;
+
+  // 1. Pending row first — its id anchors idempotency for the charge below.
+  const [payment] = await db
+    .insert(payments)
+    .values({
+      organizationId: org.id,
+      patientId: invoice.patientId,
+      method: "square_card",
+      status: "pending",
+      amountCents: amount,
+      currency: invoice.currency,
+      receivedBy: user.dbUserId,
+      externalProvider: "square",
+      metadata: { intendedInvoiceId: invoiceId },
+    })
+    .returning();
+
+  // 2. Charge the token.
+  const charged = await createSquarePayment({
+    sourceId: parsed.data.sourceId,
+    amountCents: amount,
+    currency: invoice.currency,
+    idempotencyKey: payment.id,
+    referenceId: invoiceId,
+    note: invoice.invoiceNumber ?? undefined,
+    verificationToken: parsed.data.verificationToken || undefined,
+  });
+
+  if (!charged.ok) {
+    await db
+      .update(payments)
+      .set({
+        status: "failed",
+        metadata: { intendedInvoiceId: invoiceId, squareError: charged.error },
+        updatedAt: new Date(),
+      })
+      .where(eq(payments.id, payment.id));
+    await recordAudit({
+      organizationId: org.id,
+      actorUserId: user.authId,
+      action: "payment",
+      entityType: "payment",
+      entityId: payment.id,
+      after: { method: "square_card", amount, status: "failed", invoiceId },
+    });
+    revalidatePath(`/billing/${invoiceId}`);
+    revalidatePath("/billing");
+    return { ok: false, error: charged.error };
+  }
+
+  const sq = charged.value;
+  const status = mapSquarePaymentStatus(sq.status);
+
+  // 3. Record the outcome; when captured, apply + receipt atomically (as cash).
+  await db.transaction(async (tx) => {
+    await tx
+      .update(payments)
+      .set({ status, externalId: sq.squarePaymentId, updatedAt: new Date() })
+      .where(eq(payments.id, payment.id));
+
+    await tx
+      .insert(squareTransactions)
+      .values({
+        organizationId: org.id,
+        squarePaymentId: sq.squarePaymentId,
+        squareOrderId: sq.squareOrderId,
+        squareCustomerId: sq.squareCustomerId,
+        status: sq.status,
+        amountCents: sq.amountCents,
+        tender: sq.sourceType,
+        paymentId: payment.id,
+        reconciled: status === "confirmed" && sq.amountCents === amount,
+        raw: { source: "create_payment", payment: { ...sq } },
+      })
+      .onConflictDoUpdate({
+        target: squareTransactions.squarePaymentId,
+        set: {
+          status: sq.status,
+          paymentId: payment.id,
+          reconciled: status === "confirmed" && sq.amountCents === amount,
+          updatedAt: new Date(),
+        },
+      });
+
+    if (status === "confirmed") {
+      // Re-read inside the tx: the balance may have moved since step 1; any
+      // surplus stays as an unapplied confirmed payment (manual allocation).
+      const [inv] = await tx
+        .select()
+        .from(invoices)
+        .where(
+          and(eq(invoices.organizationId, org.id), eq(invoices.id, invoiceId)),
+        )
+        .limit(1);
+      const applied = inv ? Math.min(amount, inv.balanceCents) : 0;
+      if (inv && applied > 0) {
+        await tx.insert(paymentAllocations).values({
+          organizationId: org.id,
+          paymentId: payment.id,
+          invoiceId,
+          amountCents: applied,
+        });
+        await recomputeInvoice(tx, org.id, invoiceId);
+        await tx.insert(receipts).values({
+          organizationId: org.id,
+          paymentId: payment.id,
+          invoiceId,
+          amountCents: applied,
+          language: inv.language,
+          snapshot: {
+            invoiceNumber: inv.invoiceNumber,
+            amountCents: applied,
+            currency: inv.currency,
+            method: "square_card",
+            squarePaymentId: sq.squarePaymentId,
+          },
+        });
+      }
+    }
+  });
+
+  await recordAudit({
+    organizationId: org.id,
+    actorUserId: user.authId,
+    action: "payment",
+    entityType: "payment",
+    entityId: payment.id,
+    after: {
+      method: "square_card",
+      amount,
+      status,
+      invoiceId,
+      squarePaymentId: sq.squarePaymentId,
+    },
+  });
+
+  revalidatePath(`/billing/${invoiceId}`);
+  revalidatePath("/billing");
+
+  if (status === "failed" || status === "cancelled") {
+    return { ok: false, error: "The card payment did not complete." };
+  }
+  return { ok: true, id: payment.id };
 }
 
 /** FR-PAY-002: apply a payment to an invoice with guardrails. */
@@ -790,23 +986,60 @@ export async function refundAction(raw: unknown): Promise<BillingResult> {
   });
   if (!guard.ok) return { ok: false, error: guard.reason };
 
-  await db.transaction(async (tx) => {
-    await tx.insert(refunds).values({
+  // Card payments taken via Square must be refunded at Square too (§10.1).
+  const isSquare = payment.externalProvider === "square" && !!payment.externalId;
+  if (isSquare && !getSquareConfig()) {
+    return {
+      ok: false,
+      error: "Square is not configured — this card payment cannot be refunded.",
+    };
+  }
+
+  // The local row goes first: its UUID is the Square idempotency key, so a
+  // retried request can never refund the card twice (NFR-11).
+  const [refundRow] = await db
+    .insert(refunds)
+    .values({
       organizationId: org.id,
       paymentId: payment.id,
       amountCents: parsed.data.amountCents,
       reason: parsed.data.reason,
       processedBy: user.dbUserId,
+      externalProvider: isSquare ? "square" : null,
+    })
+    .returning();
+
+  let squareRefundId: string | null = null;
+  if (isSquare) {
+    const result = await createSquareRefund({
+      squarePaymentId: payment.externalId!,
+      amountCents: parsed.data.amountCents,
+      currency: payment.currency,
+      idempotencyKey: refundRow.id,
+      reason: parsed.data.reason,
     });
-    const newRefunded = already + parsed.data.amountCents;
-    await tx
-      .update(payments)
-      .set({
-        status: derivePaymentStatus(payment.amountCents, newRefunded),
-        updatedAt: new Date(),
-      })
-      .where(eq(payments.id, payment.id));
-  });
+    if (!result.ok) {
+      // Square rejected it — no money moved, so the anchor row is removed to
+      // keep the ledger identical to Square. (A crash before this leaves the
+      // row with external_id NULL, which reconciliation surfaces.)
+      await db.delete(refunds).where(eq(refunds.id, refundRow.id));
+      return { ok: false, error: result.error };
+    }
+    squareRefundId = result.value.refundId;
+    await db
+      .update(refunds)
+      .set({ externalId: squareRefundId, updatedAt: new Date() })
+      .where(eq(refunds.id, refundRow.id));
+  }
+
+  const newRefunded = already + parsed.data.amountCents;
+  await db
+    .update(payments)
+    .set({
+      status: derivePaymentStatus(payment.amountCents, newRefunded),
+      updatedAt: new Date(),
+    })
+    .where(eq(payments.id, payment.id));
 
   await recordAudit({
     organizationId: org.id,
@@ -815,7 +1048,7 @@ export async function refundAction(raw: unknown): Promise<BillingResult> {
     entityType: "payment",
     entityId: payment.id,
     reason: parsed.data.reason,
-    after: { amount: parsed.data.amountCents },
+    after: { amount: parsed.data.amountCents, squareRefundId },
   });
 
   revalidatePath("/billing");
