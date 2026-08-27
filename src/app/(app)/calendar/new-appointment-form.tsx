@@ -82,8 +82,11 @@ export function NewAppointmentForm({
   return (
     <form
       onSubmit={handleSubmit(onSubmit)}
-      className="grid grid-cols-1 gap-3 rounded-md border border-border p-4 sm:grid-cols-2"
+      className="grid w-full grid-cols-1 gap-3 rounded-2xl border border-border bg-surface p-4 sm:grid-cols-2 lg:grid-cols-3"
     >
+      <div className="text-sm font-semibold sm:col-span-2 lg:col-span-3">
+        New appointment
+      </div>
       <Field label="Patient" htmlFor="ap-patient">
         <select id="ap-patient" className={inputClass} required {...register("patientId")}>
           <option value="">Select…</option>
@@ -133,15 +136,15 @@ export function NewAppointmentForm({
           {...register("durationMinutes", { valueAsNumber: true })}
         />
       </Field>
-      <div className="sm:col-span-2">
+      <div className="sm:col-span-2 lg:col-span-3">
         <Field label="Admin notes" htmlFor="ap-notes">
           <Input id="ap-notes" {...register("notesAdmin")} />
         </Field>
       </div>
       {message && (
-        <p className="text-sm text-danger sm:col-span-2">{message}</p>
+        <p className="text-sm text-danger sm:col-span-2 lg:col-span-3">{message}</p>
       )}
-      <div className="flex gap-2 sm:col-span-2">
+      <div className="flex gap-2 sm:col-span-2 lg:col-span-3">
         <Button type="submit" disabled={pending}>
           {pending ? "Saving…" : "Create"}
         </Button>
