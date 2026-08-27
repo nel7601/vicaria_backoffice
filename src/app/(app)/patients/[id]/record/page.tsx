@@ -12,6 +12,7 @@ import { recordAccess } from "@/lib/audit/record";
 import { clinicDateString } from "@/lib/domain/timezone";
 import { AddNoteForm } from "./add-note-form";
 import { AddFormPanel, type FormOption } from "./add-form-panel";
+import { EditableFormEntry } from "./editable-form-entry";
 
 const TZ = "America/Toronto";
 
@@ -63,6 +64,7 @@ interface TabItem {
   /** "encounter" items link to the visit; "form" items were filled directly. */
   kind: "encounter" | "form";
   encounterId?: string;
+  formId?: string;
   status?: string;
   serviceName?: string | null;
   byLine: string;
@@ -104,6 +106,7 @@ export default async function ClinicalRecordPage({
   if (!patient) notFound();
 
   const canAdd = can(roles, "clinical_notes", "create");
+  const canUpdate = can(roles, "clinical_notes", "update");
   const [chart, templates] = await Promise.all([
     getPatientChart(org.id, id),
     canAdd ? listTemplatesDetailed(org.id) : Promise.resolve([]),
@@ -155,6 +158,7 @@ export default async function ClinicalRecordPage({
       schema: f.templateSchema,
       answers: (f.answers ?? {}) as Record<string, unknown>,
       kind: "form",
+      formId: f.id,
       byLine: f.filledByEmail ?? "—",
     });
   }
@@ -346,6 +350,21 @@ export default async function ClinicalRecordPage({
           <div className="mt-4 space-y-5">
             {formTabs.get(activeTab)!.items.map((item) => {
               const fields = extractFields(item.schema);
+              if (item.kind === "form") {
+                return (
+                  <EditableFormEntry
+                    key={item.key}
+                    formId={item.formId!}
+                    fields={fields}
+                    answers={item.answers}
+                    filledAt={clinicDateString(item.at)}
+                    dateLabel={fmtDate(item.at)}
+                    byLine={item.byLine}
+                    today={clinicDateString(new Date())}
+                    canEdit={canUpdate}
+                  />
+                );
+              }
               return (
                 <div key={item.key} className="rounded-2xl border border-border p-4">
                   <div className="flex flex-wrap items-center justify-between gap-2">
@@ -355,25 +374,17 @@ export default async function ClinicalRecordPage({
                       {item.byLine}
                     </div>
                     <div className="flex items-center gap-2">
-                      {item.kind === "encounter" ? (
-                        <>
-                          <span
-                            className={`rounded-full px-2 py-0.5 text-xs ${ENCOUNTER_STATUS_STYLE[item.status ?? ""] ?? "bg-border text-muted"}`}
-                          >
-                            {item.status}
-                          </span>
-                          <Link
-                            href={`/encounters/${item.encounterId}`}
-                            className="text-xs text-primary hover:underline"
-                          >
-                            Open encounter
-                          </Link>
-                        </>
-                      ) : (
-                        <span className="rounded-full bg-warning/10 px-2 py-0.5 text-xs text-warning">
-                          filled directly
-                        </span>
-                      )}
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-xs ${ENCOUNTER_STATUS_STYLE[item.status ?? ""] ?? "bg-border text-muted"}`}
+                      >
+                        {item.status}
+                      </span>
+                      <Link
+                        href={`/encounters/${item.encounterId}`}
+                        className="text-xs text-primary hover:underline"
+                      >
+                        Open encounter
+                      </Link>
                     </div>
                   </div>
                   <dl className="mt-3 grid grid-cols-1 gap-x-8 gap-y-2 text-sm sm:grid-cols-2">

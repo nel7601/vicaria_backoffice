@@ -11,7 +11,11 @@ import {
   patientForms,
 } from "@/lib/db/schema";
 import { getPrimaryOrganization } from "@/lib/db/queries/organization";
-import { addChartNoteSchema, addPatientFormSchema } from "@/lib/schemas/clinical";
+import {
+  addChartNoteSchema,
+  addPatientFormSchema,
+  updatePatientFormSchema,
+} from "@/lib/schemas/clinical";
 import { validateAnswers, type TemplateField } from "@/lib/domain/encounter";
 import { zonedMidnightUtc } from "@/lib/domain/timezone";
 
@@ -124,5 +128,74 @@ export async function addPatientFormAction(raw: unknown): Promise<SimpleResult> 
   });
 
   revalidatePath(`/patients/${parsed.data.patientId}/record`);
+  return { ok: true };
+}
+
+/**
+ * Edit a filled form — e.g. complete answers that were missing when it was
+ * first filled. Answers are re-validated against the pinned template version.
+ */
+export async function updatePatientFormAction(
+  formId: string,
+  raw: unknown,
+): Promise<SimpleResult> {
+  const user = await authorize("clinical_notes", "update");
+  const parsed = updatePatientFormSchema.safeParse(raw);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
+  }
+  const org = await getPrimaryOrganization();
+  if (!org) return { ok: false, error: "Organization not found." };
+
+  const db = getDb();
+  const [existing] = await db
+    .select({
+      id: patientForms.id,
+      patientId: patientForms.patientId,
+      answers: patientForms.answers,
+      filledAt: patientForms.filledAt,
+      schema: encounterTemplateVersions.schema,
+    })
+    .from(patientForms)
+    .innerJoin(
+      encounterTemplateVersions,
+      eq(encounterTemplateVersions.id, patientForms.templateVersionId),
+    )
+    .where(
+      and(
+        eq(patientForms.organizationId, org.id),
+        eq(patientForms.id, formId),
+      ),
+    )
+    .limit(1);
+  if (!existing) return { ok: false, error: "Form not found." };
+
+  const fields = extractFields(existing.schema);
+  const validation = validateAnswers({ fields }, parsed.data.answers);
+  if (!validation.ok) {
+    const first = Object.values(validation.errors)[0];
+    return { ok: false, error: first ?? "Invalid answers." };
+  }
+
+  await db
+    .update(patientForms)
+    .set({
+      answers: parsed.data.answers,
+      filledAt: zonedMidnightUtc(parsed.data.filledAt),
+      updatedAt: new Date(),
+    })
+    .where(eq(patientForms.id, formId));
+
+  await recordAudit({
+    organizationId: org.id,
+    actorUserId: user.authId,
+    action: "update",
+    entityType: "patient_form",
+    entityId: formId,
+    before: { answers: existing.answers, filledAt: existing.filledAt },
+    after: { answers: parsed.data.answers, filledAt: parsed.data.filledAt },
+  });
+
+  revalidatePath(`/patients/${existing.patientId}/record`);
   return { ok: true };
 }

@@ -37,3 +37,11 @@ export const addPatientFormSchema = z.object({
 });
 
 export type AddPatientFormInput = z.infer<typeof addPatientFormSchema>;
+
+/** Edit a previously filled form (complete missing answers, fix the date). */
+export const updatePatientFormSchema = z.object({
+  filledAt: z.string().date(),
+  answers: z.record(z.string(), z.unknown()),
+});
+
+export type UpdatePatientFormInput = z.infer<typeof updatePatientFormSchema>;
