@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, count, desc, eq, ilike, isNull, or, sql } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import {
   invoiceItems,
@@ -213,4 +213,119 @@ export async function listPendingEtransfersForInvoice(
         sql`${payments.metadata} ->> 'intendedInvoiceId' = ${invoiceId}`,
       ),
     );
+}
+
+export interface PagedInvoicesParams {
+  organizationId: string;
+  /** Matches invoice number or patient name. */
+  q?: string;
+  status?: string;
+  page: number;
+  pageSize: number;
+}
+
+/** Filtered + paginated invoices for the billing list. */
+export async function listInvoicesPaged(params: PagedInvoicesParams) {
+  const db = getDb();
+  const conditions = [eq(invoices.organizationId, params.organizationId)];
+  if (params.q && params.q.trim()) {
+    const q = `%${params.q.trim()}%`;
+    conditions.push(
+      or(
+        ilike(invoices.invoiceNumber, q),
+        ilike(patients.legalFirstName, q),
+        ilike(patients.legalLastName, q),
+      )!,
+    );
+  }
+  if (params.status) {
+    conditions.push(sql`${invoices.status} = ${params.status}::invoice_status`);
+  }
+
+  const base = db
+    .select({ n: count() })
+    .from(invoices)
+    .innerJoin(patients, eq(patients.id, invoices.patientId))
+    .where(and(...conditions));
+  const [{ n: total }] = await base;
+
+  const rows = await db
+    .select({
+      id: invoices.id,
+      invoiceNumber: invoices.invoiceNumber,
+      status: invoices.status,
+      totalCents: invoices.totalCents,
+      balanceCents: invoices.balanceCents,
+      language: invoices.language,
+      issueDate: invoices.issueDate,
+      patientFirst: patients.legalFirstName,
+      patientLast: patients.legalLastName,
+      patientId: invoices.patientId,
+    })
+    .from(invoices)
+    .innerJoin(patients, eq(patients.id, invoices.patientId))
+    .where(and(...conditions))
+    .orderBy(desc(invoices.createdAt))
+    .limit(params.pageSize)
+    .offset((params.page - 1) * params.pageSize);
+
+  return { rows, total: Number(total ?? 0) };
+}
+
+export interface PagedPaymentsParams {
+  organizationId: string;
+  /** Matches patient name or payment reference. */
+  q?: string;
+  method?: string;
+  status?: string;
+  page: number;
+  pageSize: number;
+}
+
+/** Filtered + paginated payments for the billing list. */
+export async function listPaymentsPaged(params: PagedPaymentsParams) {
+  const db = getDb();
+  const conditions = [eq(payments.organizationId, params.organizationId)];
+  if (params.q && params.q.trim()) {
+    const q = `%${params.q.trim()}%`;
+    conditions.push(
+      or(
+        ilike(patients.legalFirstName, q),
+        ilike(patients.legalLastName, q),
+        ilike(payments.reference, q),
+      )!,
+    );
+  }
+  if (params.method) {
+    conditions.push(sql`${payments.method} = ${params.method}::payment_method`);
+  }
+  if (params.status) {
+    conditions.push(sql`${payments.status} = ${params.status}::payment_status`);
+  }
+
+  const [{ n: total }] = await db
+    .select({ n: count() })
+    .from(payments)
+    .innerJoin(patients, eq(patients.id, payments.patientId))
+    .where(and(...conditions));
+
+  const rows = await db
+    .select({
+      id: payments.id,
+      method: payments.method,
+      status: payments.status,
+      amountCents: payments.amountCents,
+      receivedAt: payments.receivedAt,
+      reference: payments.reference,
+      patientFirst: patients.legalFirstName,
+      patientLast: patients.legalLastName,
+    })
+    .from(payments)
+    .innerJoin(patients, eq(patients.id, payments.patientId))
+    .where(and(...conditions))
+    .orderBy(desc(payments.receivedAt))
+    .limit(params.pageSize)
+    .offset((params.page - 1) * params.pageSize);
+
+  return { rows, total: Number(total ?? 0) };
 }
