@@ -18,6 +18,11 @@ export interface ToolContext {
   /** One instant for the whole turn, so two tools cannot disagree on "today". */
   now: Date;
   timeZone: string;
+  /**
+   * How the user is interacting. Voice changes how an answer should be
+   * phrased, not what it may contain — permissions do not vary by channel.
+   */
+  channel?: "text" | "voice";
 }
 
 export interface AssistantTool<Input = unknown, Output = unknown> {

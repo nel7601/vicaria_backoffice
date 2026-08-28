@@ -4,7 +4,7 @@ import { requestPrincipal } from "@/lib/assistant/auth/request-identity";
 import { assistantFlags } from "@/lib/assistant/flags";
 import { assistantError, assistantErrorResponse } from "@/lib/assistant/http";
 import { appendExchange, loadConversation } from "@/lib/assistant/conversation";
-import { runTurn } from "@/lib/assistant/orchestrator";
+import { runTurn, type TurnEvent } from "@/lib/assistant/orchestrator";
 import { getProvider } from "@/lib/assistant/provider";
 import { recordAudit } from "@/lib/audit/record";
 import { requireTenant } from "@/lib/auth/principal";
@@ -37,6 +37,16 @@ const bodySchema = z.object({
    * sends can rewrite the past.
    */
   conversationId: z.string().min(1).max(100).optional(),
+  /**
+   * How the user is interacting. Voice answers are phrased for listening —
+   * the permissions do not change, only the wording.
+   */
+  channel: z.enum(["text", "voice"]).default("text"),
+  /**
+   * Ask for server-sent events instead of one JSON reply. A grounded answer
+   * takes seconds; in voice that is silence with nothing to show for it.
+   */
+  stream: z.boolean().default(false),
   /** Client-generated, for idempotency and for correlating logs. */
   requestId: z.string().max(100).optional(),
 });
@@ -82,9 +92,27 @@ export async function POST(request: Request) {
       ? loadConversation(principal.authUserId, conversationId)
       : [];
 
+    const ctx = {
+      principal,
+      now: new Date(),
+      timeZone: CLINIC_TZ,
+      channel: parsed.data.channel,
+    };
+
+    if (parsed.data.stream) {
+      return streamTurn({
+        principal,
+        ctx,
+        input: parsed.data.input,
+        history,
+        conversationId,
+        requestId: parsed.data.requestId,
+      });
+    }
+
     const outcome = await runTurn({
       provider: getProvider(),
-      ctx: { principal, now: new Date(), timeZone: CLINIC_TZ },
+      ctx,
       input: parsed.data.input,
       history,
     });
@@ -119,6 +147,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       kind: outcome.kind,
       message: outcome.message,
+      spoken: outcome.spoken,
       options: outcome.options,
       toolsUsed: outcome.toolsUsed,
       conversationId,
@@ -126,4 +155,105 @@ export async function POST(request: Request) {
   } catch (error) {
     return assistantErrorResponse(error);
   }
+}
+
+/**
+ * The same turn as server-sent events.
+ *
+ * Events are progress, not the answer: `status` says what is being looked up,
+ * `delta` carries the reply as it forms, and `done` is authoritative. A client
+ * that only reads `done` behaves exactly like the non-streaming caller — which
+ * matters, because the deltas come from a partially-parsed tool call and the
+ * final parse is the one that decides the outcome.
+ */
+function streamTurn(params: {
+  principal: Awaited<ReturnType<typeof requestPrincipal>> & {
+    organizationId: string;
+    dbUserId: string;
+  };
+  ctx: Parameters<typeof runTurn>[0]["ctx"];
+  input: string;
+  history: Parameters<typeof runTurn>[0]["history"];
+  conversationId?: string;
+  requestId?: string;
+}): Response {
+  const encoder = new TextEncoder();
+
+  const body = new ReadableStream({
+    async start(controller) {
+      const send = (event: string, data: unknown) => {
+        controller.enqueue(
+          encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`),
+        );
+      };
+
+      try {
+        const outcome = await runTurn({
+          provider: getProvider(),
+          ctx: params.ctx,
+          input: params.input,
+          history: params.history,
+          onEvent: (event: TurnEvent) => {
+            if (event.type === "delta") send("delta", { text: event.text });
+            else if (event.type === "tools_requested") {
+              if (event.names.length) send("status", { looking_up: event.names });
+            } else send("status", { finished: event.name, ok: event.ok });
+          },
+        });
+
+        if (params.conversationId) {
+          appendExchange(
+            params.principal.authUserId,
+            params.conversationId,
+            params.input,
+            outcome.message,
+          );
+        }
+
+        await recordAudit({
+          organizationId: params.principal.organizationId,
+          actorUserId: params.principal.dbUserId,
+          action: "assistant_turn",
+          entityType: "assistant",
+          after: {
+            outcome: outcome.kind,
+            toolsUsed: outcome.toolsUsed,
+            terminatedByServer: outcome.terminatedByServer ?? false,
+            conversationId: params.conversationId,
+            requestId: params.requestId,
+            streamed: true,
+          },
+        });
+
+        send("done", {
+          kind: outcome.kind,
+          message: outcome.message,
+          spoken: outcome.spoken,
+          options: outcome.options,
+          toolsUsed: outcome.toolsUsed,
+          conversationId: params.conversationId,
+        });
+      } catch {
+        // The status line is already 200 by now, so a failure has to travel as
+        // an event. A client that sees this and no `done` knows the turn died.
+        send("error", {
+          error: "turn_failed",
+          message: "The assistant could not finish that turn.",
+        });
+      } finally {
+        controller.close();
+      }
+    },
+  });
+
+  return new Response(body, {
+    headers: {
+      "Content-Type": "text/event-stream; charset=utf-8",
+      "Cache-Control": "no-cache, no-transform",
+      Connection: "keep-alive",
+      // Vercel and most proxies buffer responses unless told not to, which
+      // would defeat the point entirely.
+      "X-Accel-Buffering": "no",
+    },
+  });
 }

@@ -56,7 +56,22 @@ export interface RunTurnParams {
   history?: AiMessage[];
   limits?: Partial<OrchestratorLimits>;
   now?: () => number;
+  /**
+   * Called as the turn progresses, when supplied. The turn's result is
+   * unchanged by it: these are for filling the wait, not for deciding
+   * anything, and a caller that ignores them gets the same answer.
+   */
+  onEvent?: (event: TurnEvent) => void;
 }
+
+/** What a caller can show while a turn is still being worked out. */
+export type TurnEvent =
+  /** The model is asking for these tools; the server has not run them yet. */
+  | { type: "tools_requested"; names: string[] }
+  /** A tool finished. `ok` is false when it was refused or failed. */
+  | { type: "tool_done"; name: string; ok: boolean }
+  /** A fragment of the answer, as it is written. */
+  | { type: "delta"; text: string };
 
 export async function runTurn(params: RunTurnParams): Promise<TurnOutcome> {
   const limits = { ...DEFAULT_LIMITS, ...params.limits };
@@ -87,13 +102,31 @@ export async function runTurn(params: RunTurnParams): Promise<TurnOutcome> {
       return serverEnded(locale, toolsUsed, "timeout");
     }
 
+    const providerRequest = {
+      system: buildSystemPrompt(ctx, available.map((t) => t.name)),
+      messages,
+      tools: toolSpecs,
+    };
+
     let response;
     try {
-      response = await provider.complete({
-        system: buildSystemPrompt(ctx, available.map((t) => t.name)),
-        messages,
-        tools: toolSpecs,
-      });
+      response =
+        params.onEvent && provider.stream
+          ? await provider.stream(providerRequest, (event) => {
+              if (event.type === "delta") {
+                params.onEvent?.({ type: "delta", text: event.text });
+              } else {
+                // `respond` is the turn ending, not work being done. Filtering
+                // it can leave nothing, and an empty "looking up…" is worse
+                // than no event at all — so it is dropped here rather than in
+                // each consumer.
+                const names = event.names.filter((n) => n !== RESPOND_TOOL);
+                if (names.length) {
+                  params.onEvent?.({ type: "tools_requested", names });
+                }
+              }
+            })
+          : await provider.complete(providerRequest);
     } catch (error) {
       if (error instanceof AiProviderError) {
         return serverEnded(locale, toolsUsed, "provider_error");
@@ -116,6 +149,7 @@ export async function runTurn(params: RunTurnParams): Promise<TurnOutcome> {
       return {
         kind: parsed.data.kind,
         message: parsed.data.message,
+        spoken: parsed.data.spoken,
         options: parsed.data.options,
         toolsUsed,
       };
@@ -133,6 +167,7 @@ export async function runTurn(params: RunTurnParams): Promise<TurnOutcome> {
       }
       const result = await runOne(call.name, call.arguments, ctx);
       if (result.ok) toolsUsed.push(call.name);
+      params.onEvent?.({ type: "tool_done", name: call.name, ok: result.ok });
       messages.push({
         role: "tool",
         toolCallId: call.id,

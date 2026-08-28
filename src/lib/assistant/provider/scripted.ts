@@ -1,6 +1,7 @@
 import {
   AiProviderError,
   type AiProvider,
+  type AiStreamEvent,
   type AiTurnRequest,
   type AiTurnResponse,
 } from "./types";
@@ -36,6 +37,36 @@ export class ScriptedProvider implements AiProvider {
       );
     }
     return next;
+  }
+
+  /**
+   * Replays the same script while emitting the events a real provider would.
+   *
+   * Tool names are announced before the answer, and the answer arrives in
+   * fragments, so callers can be tested against the shape of a stream without
+   * a network or a model.
+   */
+  async stream(
+    request: AiTurnRequest,
+    onEvent: (event: AiStreamEvent) => void,
+  ): Promise<AiTurnResponse> {
+    const response = await this.complete(request);
+
+    if (response.toolCalls.length) {
+      onEvent({ type: "tool_use", names: response.toolCalls.map((c) => c.name) });
+    }
+
+    for (const call of response.toolCalls) {
+      const message = (call.arguments as { message?: unknown } | undefined)?.message;
+      if (typeof message !== "string") continue;
+      // Split into fixed-size pieces so tests see genuine fragmentation,
+      // including across newlines.
+      for (let i = 0; i < message.length; i += 12) {
+        onEvent({ type: "delta", text: message.slice(i, i + 12) });
+      }
+    }
+
+    return response;
   }
 }
 

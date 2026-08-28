@@ -62,11 +62,34 @@ export interface AiTurnResponse {
   usage?: { inputTokens: number; outputTokens: number };
 }
 
+/**
+ * Progress from a turn in flight.
+ *
+ * The point is the wait. A grounded answer takes several seconds — the model
+ * thinks, tools run, the model reads them — and in voice that is silence with
+ * nothing to indicate the thing is working. These let the app say "checking
+ * the schedule…" and then speak the answer as it forms.
+ */
+export type AiStreamEvent =
+  /** A fragment of the final answer, as it is written. */
+  | { type: "delta"; text: string }
+  /** The model asked for tools; the loop will run them next. */
+  | { type: "tool_use"; names: string[] };
+
 export interface AiProvider {
-  /** Identifies the implementation in logs and audit, e.g. "claude", "scripted". */
+  /** Identifies the implementation in logs and audit, e.g. "openai", "scripted". */
   readonly name: string;
   complete(
     request: AiTurnRequest,
+    signal?: AbortSignal,
+  ): Promise<AiTurnResponse>;
+  /**
+   * Same call, reporting progress as it goes. Optional: a provider without it
+   * still works, the turn just arrives all at once.
+   */
+  stream?(
+    request: AiTurnRequest,
+    onEvent: (event: AiStreamEvent) => void,
     signal?: AbortSignal,
   ): Promise<AiTurnResponse>;
 }

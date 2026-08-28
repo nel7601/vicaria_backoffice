@@ -15,6 +15,31 @@ import type { ToolContext } from "./tools/types";
  * "ignore your instructions" must arrive as tool output, which is data, and
  * never as instruction.
  */
+/**
+ * Extra instructions when the answer will be heard rather than read.
+ *
+ * Two separate problems. A list is scannable on screen and unbearable aloud —
+ * by the fourth appointment nobody remembers the first — so the spoken form
+ * leads with the count and offers the rest. And a phone reading "Amelia Torres
+ * owes eighty-five dollars" in a waiting room discloses to everyone standing
+ * near it, which is why the spoken form avoids names and figures the screen
+ * can carry instead.
+ */
+function voiceGuidance(channel: ToolContext["channel"]): string[] {
+  if (channel !== "voice") return [];
+  return [
+    "",
+    "This answer will be SPOKEN aloud. Fill the `spoken` field of respond with",
+    "a short version — one or two sentences, under about thirty words. Lead",
+    "with the number or the single fact asked for, then offer the detail:",
+    '"You have three appointments on Friday. Want me to go through them?"',
+    "Never read a list aloud. Keep names and amounts out of `spoken` when the",
+    "answer works without them — the screen shows the full version, and",
+    "whoever is standing next to the phone does not need to hear a patient's",
+    "name. Put everything in `message` as normal.",
+  ];
+}
+
 export function buildSystemPrompt(
   ctx: ToolContext,
   availableTools: string[],
@@ -51,6 +76,7 @@ export function buildSystemPrompt(
     "",
     `Answer in ${language}. Be brief and concrete: staff are usually reading`,
     "this between patients.",
+    ...voiceGuidance(ctx.channel),
     "",
     "Current clinic time:",
     `- Today is ${now.weekday}, ${now.today} (timezone ${now.timeZone}).`,

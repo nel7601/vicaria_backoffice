@@ -24,8 +24,19 @@ export type OutcomeKind = (typeof OUTCOME_KINDS)[number];
 
 export const respondSchema = z.object({
   kind: z.enum(OUTCOME_KINDS),
-  /** What the user hears and reads. Plain language, in their locale. */
+  /** What appears on screen. Plain language, in the user's locale. */
   message: z.string().min(1).max(4000),
+  /**
+   * What gets read aloud, when it should differ from what is on screen.
+   *
+   * A list of ten appointments is fine to look at and unbearable to listen
+   * to — by the fourth item nobody remembers the first. Spoken answers lead
+   * with the number and offer the detail, leaving the screen to carry it.
+   *
+   * It also keeps names out of the air: a phone answering "Amelia Torres owes
+   * eighty-five dollars" in a waiting room discloses to whoever is nearby.
+   */
+  spoken: z.string().max(600).optional(),
   /**
    * Options for a clarification, e.g. two patients matching a nickname.
    * Labels only — the caller sends back the id, never a name.
@@ -47,6 +58,8 @@ export const OUT_OF_SCOPE_MESSAGE: Record<"en" | "es", string> = {
 export interface TurnOutcome {
   kind: OutcomeKind;
   message: string;
+  /** Short form for text-to-speech; falls back to `message` when absent. */
+  spoken?: string;
   options?: { id: string; label: string }[];
   /** Tools actually run this turn, for audit and for debugging a bad answer. */
   toolsUsed: string[];

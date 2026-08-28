@@ -1,8 +1,10 @@
+import { PartialStringField } from "./partial-json";
 import {
   AiProviderError,
   type AiMessage,
   type AiProvider,
   type AiStopReason,
+  type AiStreamEvent,
   type AiTurnRequest,
   type AiTurnResponse,
 } from "./types";
@@ -40,6 +42,30 @@ export class OpenAiProvider implements AiProvider {
     request: AiTurnRequest,
     signal?: AbortSignal,
   ): Promise<AiTurnResponse> {
+    return this.send(request, undefined, signal);
+  }
+
+  /**
+   * Same turn, reporting progress.
+   *
+   * Two kinds of event, for the two kinds of waiting. `tool_use` fires as soon
+   * as the model names the tools it wants, so the app can say what it is doing
+   * instead of showing nothing. `delta` carries the answer as it is written —
+   * which arrives inside a tool call's arguments, hence the partial reader.
+   */
+  async stream(
+    request: AiTurnRequest,
+    onEvent: (event: AiStreamEvent) => void,
+    signal?: AbortSignal,
+  ): Promise<AiTurnResponse> {
+    return this.send(request, onEvent, signal);
+  }
+
+  private async send(
+    request: AiTurnRequest,
+    onEvent: ((event: AiStreamEvent) => void) | undefined,
+    signal?: AbortSignal,
+  ): Promise<AiTurnResponse> {
     const body: Record<string, unknown> = {
       model: this.model,
       messages: toChatMessages(request),
@@ -58,6 +84,7 @@ export class OpenAiProvider implements AiProvider {
         : {}),
       [tokenLimitField(this.model)]:
         request.maxOutputTokens ?? this.options.maxTokens ?? 4096,
+      ...(onEvent ? { stream: true } : {}),
     };
 
     let response: Response;
@@ -88,7 +115,9 @@ export class OpenAiProvider implements AiProvider {
       );
     }
 
-    const payload = (await response.json()) as ChatCompletion;
+    const payload = onEvent
+      ? await readStream(response, onEvent)
+      : ((await response.json()) as ChatCompletion);
     const choice = payload.choices?.[0];
     if (!choice) {
       throw new AiProviderError("The provider returned no choices.", false);
@@ -111,6 +140,122 @@ export class OpenAiProvider implements AiProvider {
       },
     };
   }
+}
+
+/**
+ * Reassemble a streamed completion into the same shape as a plain one.
+ *
+ * The wire format splits everything: text arrives token by token, and a tool
+ * call arrives as a name followed by its arguments in fragments. Callers above
+ * should not have to know that, so the pieces are joined here and the same
+ * object comes back either way.
+ */
+async function readStream(
+  response: Response,
+  onEvent: (event: AiStreamEvent) => void,
+): Promise<ChatCompletion> {
+  const reader = response.body?.getReader();
+  if (!reader) throw new AiProviderError("The provider sent no body.", true);
+
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let text = "";
+  let finish: string | undefined;
+  let usage: ChatCompletion["usage"];
+  const calls = new Map<number, { id: string; name: string; args: string }>();
+  // Only the final answer is worth showing as it is written; a tool call's
+  // other arguments are machinery.
+  const answer = new PartialStringField("message");
+  let announced = false;
+
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    let cut: number;
+    while ((cut = buffer.indexOf("\n")) >= 0) {
+      const line = buffer.slice(0, cut).trim();
+      buffer = buffer.slice(cut + 1);
+      if (!line.startsWith("data:")) continue;
+
+      const data = line.slice(5).trim();
+      if (data === "[DONE]") continue;
+
+      let chunk: StreamChunk;
+      try {
+        chunk = JSON.parse(data) as StreamChunk;
+      } catch {
+        // A malformed frame is not worth failing a turn over.
+        continue;
+      }
+
+      if (chunk.usage) usage = chunk.usage;
+      const delta = chunk.choices?.[0];
+      if (!delta) continue;
+      if (delta.finish_reason) finish = delta.finish_reason;
+      if (delta.delta?.content) {
+        text += delta.delta.content;
+        onEvent({ type: "delta", text: delta.delta.content });
+      }
+
+      for (const call of delta.delta?.tool_calls ?? []) {
+        const index = call.index ?? 0;
+        const existing = calls.get(index) ?? { id: "", name: "", args: "" };
+        if (call.id) existing.id = call.id;
+        if (call.function?.name) existing.name = call.function.name;
+        if (call.function?.arguments) {
+          existing.args += call.function.arguments;
+          const fresh = answer.push(call.function.arguments);
+          if (fresh) onEvent({ type: "delta", text: fresh });
+        }
+        calls.set(index, existing);
+      }
+
+      // Announce the tools once their names are known, before their arguments
+      // finish arriving — that is the part of the wait worth filling.
+      if (!announced) {
+        const names = [...calls.values()].map((c) => c.name).filter(Boolean);
+        if (names.length) {
+          announced = true;
+          onEvent({ type: "tool_use", names });
+        }
+      }
+    }
+  }
+
+  return {
+    choices: [
+      {
+        finish_reason: finish,
+        message: {
+          content: text || null,
+          tool_calls: [...calls.values()]
+            .filter((c) => c.name)
+            .map((c) => ({
+              id: c.id,
+              function: { name: c.name, arguments: c.args },
+            })),
+        },
+      },
+    ],
+    usage,
+  };
+}
+
+interface StreamChunk {
+  choices?: {
+    finish_reason?: string;
+    delta?: {
+      content?: string;
+      tool_calls?: {
+        index?: number;
+        id?: string;
+        function?: { name?: string; arguments?: string };
+      }[];
+    };
+  }[];
+  usage?: { prompt_tokens?: number; completion_tokens?: number };
 }
 
 interface ChatCompletion {
