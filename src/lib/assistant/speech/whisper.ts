@@ -32,17 +32,19 @@ export class WhisperProvider implements SpeechProvider {
     request: TranscriptionRequest,
     signal?: AbortSignal,
   ): Promise<TranscriptionResult> {
+    const model = this.options.model ?? DEFAULT_MODEL;
+
     const form = new FormData();
     form.append("file", request.audio, request.filename);
-    form.append("model", this.options.model ?? "whisper-1");
-    form.append("response_format", "verbose_json");
+    form.append("model", model);
+    // Only the original whisper models return verbose_json; the gpt-4o
+    // transcribers reject it. Asking for what a model cannot give fails the
+    // whole request, so the duration is what gets given up, not the transcript.
+    form.append("response_format", supportsVerbose(model) ? "verbose_json" : "json");
     if (request.language) form.append("language", request.language);
 
-    // Whisper takes a free-text prompt as decoding context rather than a word
-    // list. Names separated by commas is the shape that biases it without
-    // making it try to continue a sentence.
     if (request.vocabulary?.length) {
-      form.append("prompt", buildPrompt(request.vocabulary));
+      form.append("prompt", buildPrompt(request.vocabulary, request.language));
     }
 
     let response: Response;
@@ -87,14 +89,49 @@ export class WhisperProvider implements SpeechProvider {
 }
 
 /**
- * Whisper's prompt is capped (~224 tokens) and silently truncates beyond it,
- * so the list is bounded here rather than discovering the cut-off in the
- * results. Callers should send the names most likely to be spoken, not every
- * name they have.
+ * The gpt-4o transcribers are markedly better with proper nouns than
+ * whisper-1, which is the failure this whole path exists to fix. Overridable
+ * through ASSISTANT_STT_MODEL for a self-hosted deployment, where the model
+ * name is whatever that server calls it.
+ */
+export const DEFAULT_MODEL = "gpt-4o-transcribe";
+
+/** Only the classic whisper models return timings and duration. */
+export function supportsVerbose(model: string): boolean {
+  return model.startsWith("whisper");
+}
+
+/**
+ * The prompt is capped (~224 tokens) and truncates silently past it, so the
+ * list is bounded here rather than discovered in the results. Send the names
+ * most likely to be spoken, not every name on file.
  */
 export const MAX_VOCABULARY_TERMS = 60;
 
-export function buildPrompt(vocabulary: string[]): string {
+/**
+ * Build the decoding context.
+ *
+ * The prompt is not a dictionary — it is an example of what the transcript
+ * should look like, and the model imitates its style. A bare comma-separated
+ * list of names taught it to write "Ke tengo kon" for "¿Qué tengo con": names
+ * came out right and ordinary Spanish fell apart. Wrapping the same names in a
+ * correctly written sentence fixed all three test phrases, accents and
+ * question marks included.
+ *
+ * So: well-formed prose, in the language being spoken, with the names inside
+ * it.
+ */
+export function buildPrompt(
+  vocabulary: string[],
+  language: "es" | "en" = "es",
+): string {
   const unique = [...new Set(vocabulary.map((v) => v.trim()).filter(Boolean))];
-  return unique.slice(0, MAX_VOCABULARY_TERMS).join(", ");
+  if (!unique.length) return "";
+  const names = unique.slice(0, MAX_VOCABULARY_TERMS).join(", ");
+
+  return language === "en"
+    ? `Vicaria clinic consultation. These proper names may be mentioned: ${names}. ` +
+        `Transcribe in English with correct spelling and punctuation.`
+    : `Consulta de la clínica Vicaria. Se mencionan estos nombres propios: ${names}. ` +
+        `Transcribe en español, con ortografía y puntuación correctas.`;
 }
