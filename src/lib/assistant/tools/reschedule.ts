@@ -120,14 +120,21 @@ export const rescheduleAppointmentTool: AssistantTool<Input, unknown> = {
     const who = current.preferredName
       ? `${current.preferredName} (${current.patientFirst} ${current.patientLast})`
       : `${current.patientFirst} ${current.patientLast}`;
-    const when = new Intl.DateTimeFormat("en-CA", {
+    // The card is what the user reads before agreeing, so it is written in
+    // their language — an English confirmation for a Spanish speaker is a
+    // confirmation they have to decode before they can trust it.
+    const spanish = ctx.principal.locale === "es";
+    const when = new Intl.DateTimeFormat(spanish ? "es-CA" : "en-CA", {
       timeZone: ctx.timeZone,
       dateStyle: "full",
       timeStyle: "short",
     }).format(startAt);
-    const summary =
-      `Move ${who}'s appointment with ` +
-      `${current.practitionerFirst} ${current.practitionerLast} to ${when}.`;
+    const practitioner =
+      `${current.practitionerFirst} ${current.practitionerLast}`.trim();
+    // No trailing period: the formatted time already ends in one ("p.m.").
+    const summary = spanish
+      ? `Mover la cita de ${who} con ${practitioner} al ${when}`
+      : `Move ${who}'s appointment with ${practitioner} to ${when}`;
 
     const proposal = await createProposal(ctx.principal, {
       toolName: "reschedule_appointment",
