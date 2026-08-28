@@ -15,6 +15,12 @@ import { requireTenant } from "@/lib/auth/principal";
  */
 export const dynamic = "force-dynamic";
 
+/**
+ * A write is a transaction against the database, not a model call, so it is
+ * quick — but it must never be cut off half-way by a platform timeout.
+ */
+export const maxDuration = 30;
+
 const bodySchema = z.object({
   proposalId: z.uuid(),
   /** Echoed from the proposal, proving the user confirmed what they saw. */

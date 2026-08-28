@@ -23,6 +23,11 @@ import { InMemoryRateLimiter } from "@/lib/security/rate-limit";
  */
 export const dynamic = "force-dynamic";
 
+/**
+ * A minute of audio takes several seconds to upload and transcribe.
+ */
+export const maxDuration = 60;
+
 /** Audio is expensive to process, so it is capped harder than a text turn. */
 const transcribeLimiter = new InMemoryRateLimiter(30, 60_000);
 

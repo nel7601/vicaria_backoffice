@@ -1,124 +1,149 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   CONVERSATION_TTL_MS,
+  ConversationKeyMissing,
   MAX_HISTORY_MESSAGES,
-  appendExchange,
-  forgetConversation,
-  loadConversation,
-  resetConversations,
+  conversationMemoryAvailable,
+  extendConversation,
+  openConversation,
+  sealConversation,
 } from "@/lib/assistant/conversation";
+import type { AiMessage } from "@/lib/assistant/provider/types";
 
 /**
- * Conversation memory is what lets someone say "and next week?" instead of
- * repeating themselves. It is also, by construction, a store of things people
- * said about patients — so what it forgets, and who it refuses to show, matter
- * as much as what it remembers.
+ * The history travels through the client, so it is treated as hostile input on
+ * the way back: encrypted so it cannot be read, authenticated so it cannot be
+ * edited, and bound to a user so it cannot be borrowed.
+ *
+ * Every failure here has to degrade to "no memory", never to a thrown turn —
+ * forgetting costs a repeated question, failing costs the answer.
  */
 
-beforeEach(() => resetConversations());
+const KEY = "test-key-for-sealing-conversations";
+const USER = "auth-user-1";
+const OTHER = "auth-user-2";
 
-describe("remembering a conversation", () => {
-  it("returns nothing for a conversation that never happened", () => {
-    expect(loadConversation("user-1", "c1")).toEqual([]);
-  });
+const history: AiMessage[] = [
+  { role: "user", content: "¿qué citas hay este mes?" },
+  { role: "assistant", content: "Hay 10 citas." },
+];
 
-  it("gives back the exchange in order", () => {
-    appendExchange("user-1", "c1", "what's on friday?", "Three appointments.");
-    expect(loadConversation("user-1", "c1")).toEqual([
-      { role: "user", content: "what's on friday?" },
-      { role: "assistant", content: "Three appointments." },
-    ]);
-  });
-
-  it("accumulates across turns so a follow-up has context", () => {
-    appendExchange("user-1", "c1", "what's on friday?", "Three appointments.");
-    appendExchange("user-1", "c1", "and next week?", "Eleven.");
-    const history = loadConversation("user-1", "c1");
-    expect(history).toHaveLength(4);
-    expect(history[2]).toEqual({ role: "user", content: "and next week?" });
-  });
-
-  it("keeps conversations apart", () => {
-    appendExchange("user-1", "c1", "friday?", "Three.");
-    appendExchange("user-1", "c2", "invoices?", "Five outstanding.");
-    expect(loadConversation("user-1", "c1")).toHaveLength(2);
-    expect(loadConversation("user-1", "c2")[0]).toEqual({
-      role: "user",
-      content: "invoices?",
-    });
-  });
+beforeEach(() => {
+  process.env.ASSISTANT_CONVERSATION_KEY = KEY;
+});
+afterEach(() => {
+  delete process.env.ASSISTANT_CONVERSATION_KEY;
 });
 
-describe("what it refuses to share", () => {
-  it("does not hand one user another user's conversation", () => {
-    // A conversation id is not a capability: knowing it must not be enough.
-    appendExchange("user-1", "shared-id", "Amelia's balance?", "Zero.");
-    expect(loadConversation("user-2", "shared-id")).toEqual([]);
+describe("carrying a conversation", () => {
+  it("round-trips what was said", () => {
+    const sealed = sealConversation(USER, history);
+    expect(openConversation(USER, sealed)).toEqual(history);
   });
 
-  it("keeps each user's copy of the same id separate", () => {
-    appendExchange("user-1", "c1", "mine", "yours");
-    appendExchange("user-2", "c1", "theirs", "ours");
-    expect(loadConversation("user-1", "c1")[0]).toEqual({
-      role: "user",
-      content: "mine",
-    });
-    expect(loadConversation("user-2", "c1")[0]).toEqual({
-      role: "user",
-      content: "theirs",
-    });
+  it("produces something the client cannot read", () => {
+    const sealed = sealConversation(USER, history);
+    expect(sealed).not.toContain("citas");
+    expect(Buffer.from(sealed, "base64url").toString("utf8")).not.toContain(
+      "citas",
+    );
   });
 
-  it("returns a copy, so a caller cannot mutate the stored history", () => {
-    appendExchange("user-1", "c1", "hello", "hi");
-    const history = loadConversation("user-1", "c1");
-    history.push({ role: "user", content: "injected" });
-    expect(loadConversation("user-1", "c1")).toHaveLength(2);
-  });
-});
-
-describe("forgetting", () => {
-  it("drops a conversation once it goes quiet", () => {
-    // No read in between: any read would refresh the clock, which is the
-    // keep-alive behaviour asserted in the next test.
-    const t0 = 1_000_000;
-    appendExchange("user-1", "c1", "hello", "hi", t0);
-    expect(
-      loadConversation("user-1", "c1", t0 + CONVERSATION_TTL_MS + 1),
-    ).toEqual([]);
+  it("differs every time, so two identical histories are not linkable", () => {
+    expect(sealConversation(USER, history)).not.toBe(
+      sealConversation(USER, history),
+    );
   });
 
-  it("keeps a conversation alive while it is being used", () => {
-    const t0 = 1_000_000;
-    appendExchange("user-1", "c1", "hello", "hi", t0);
-    // Read just before expiry: the clock restarts.
-    loadConversation("user-1", "c1", t0 + CONVERSATION_TTL_MS - 1);
-    expect(
-      loadConversation("user-1", "c1", t0 + CONVERSATION_TTL_MS + 1),
-    ).toHaveLength(2);
+  it("adds an exchange without losing the earlier ones", () => {
+    const first = sealConversation(USER, history);
+    const second = extendConversation(USER, first, "¿y el viernes?", "Ninguna.");
+    const opened = openConversation(USER, second);
+    expect(opened).toHaveLength(4);
+    expect(opened[2]).toEqual({ role: "user", content: "¿y el viernes?" });
   });
 
-  it("forgets on request", () => {
-    appendExchange("user-1", "c1", "hello", "hi");
-    forgetConversation("user-1", "c1");
-    expect(loadConversation("user-1", "c1")).toEqual([]);
-  });
-
-  it("caps how much it keeps", () => {
-    for (let i = 0; i < 60; i++) {
-      appendExchange("user-1", "c1", `question ${i}`, `answer ${i}`);
-    }
-    const history = loadConversation("user-1", "c1");
-    expect(history.length).toBeLessThanOrEqual(MAX_HISTORY_MESSAGES);
-    // The most recent turn survives; the oldest does not.
-    expect(JSON.stringify(history)).toContain("question 59");
-    expect(JSON.stringify(history)).not.toContain("question 0");
+  it("starts a conversation when there is nothing to extend", () => {
+    const sealed = extendConversation(USER, undefined, "hola", "hola");
+    expect(openConversation(USER, sealed)).toHaveLength(2);
   });
 
   it("does not record an empty reply as a turn", () => {
-    appendExchange("user-1", "c1", "hello", "");
-    expect(loadConversation("user-1", "c1")).toEqual([
-      { role: "user", content: "hello" },
+    const sealed = extendConversation(USER, undefined, "hola", "");
+    expect(openConversation(USER, sealed)).toEqual([
+      { role: "user", content: "hola" },
     ]);
+  });
+});
+
+describe("what it refuses", () => {
+  it("will not open another user's conversation", () => {
+    // The user id is authenticated, so knowing the blob is not enough.
+    const sealed = sealConversation(USER, history);
+    expect(openConversation(OTHER, sealed)).toEqual([]);
+  });
+
+  it("rejects a tampered blob rather than trusting it", () => {
+    const sealed = sealConversation(USER, history);
+    const raw = Buffer.from(sealed, "base64url");
+    raw[raw.length - 1] ^= 0xff;
+    expect(openConversation(USER, raw.toString("base64url"))).toEqual([]);
+  });
+
+  it("rejects a blob sealed with a different key", () => {
+    const sealed = sealConversation(USER, history);
+    process.env.ASSISTANT_CONVERSATION_KEY = "a-completely-different-key";
+    // What rotating the key costs: conversations in flight start over.
+    expect(openConversation(USER, sealed)).toEqual([]);
+  });
+
+  it("forgets once it has gone stale", () => {
+    const t0 = 1_000_000;
+    const sealed = sealConversation(USER, history, t0);
+    expect(openConversation(USER, sealed, t0 + 1000)).toHaveLength(2);
+    expect(openConversation(USER, sealed, t0 + CONVERSATION_TTL_MS + 1)).toEqual(
+      [],
+    );
+  });
+
+  it("returns nothing for junk instead of throwing", () => {
+    for (const junk of ["", "not-base64!!", "aGVsbG8", "x".repeat(500)]) {
+      expect(openConversation(USER, junk)).toEqual([]);
+    }
+  });
+
+  it("ignores an absurdly large blob without parsing it", () => {
+    expect(openConversation(USER, "A".repeat(200_000))).toEqual([]);
+  });
+
+  it("caps what it carries forward", () => {
+    let sealed: string | undefined;
+    for (let i = 0; i < 40; i++) {
+      sealed = extendConversation(USER, sealed, `pregunta ${i}`, `respuesta ${i}`);
+    }
+    const opened = openConversation(USER, sealed);
+    expect(opened.length).toBeLessThanOrEqual(MAX_HISTORY_MESSAGES);
+    expect(JSON.stringify(opened)).toContain("pregunta 39");
+    expect(JSON.stringify(opened)).not.toContain("pregunta 0");
+  });
+});
+
+describe("when no key is configured", () => {
+  beforeEach(() => {
+    delete process.env.ASSISTANT_CONVERSATION_KEY;
+  });
+
+  it("reports that memory is unavailable", () => {
+    expect(conversationMemoryAvailable()).toBe(false);
+  });
+
+  it("opens nothing rather than failing a turn", () => {
+    expect(openConversation(USER, "anything")).toEqual([]);
+  });
+
+  it("refuses to seal, so nothing is handed out unprotected", () => {
+    // Sealing is the one place that must not degrade quietly: returning
+    // plaintext would put the conversation in the client's hands.
+    expect(() => sealConversation(USER, history)).toThrow(ConversationKeyMissing);
   });
 });

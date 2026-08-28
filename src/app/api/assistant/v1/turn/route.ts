@@ -3,7 +3,11 @@ import { z } from "zod";
 import { requestPrincipal } from "@/lib/assistant/auth/request-identity";
 import { assistantFlags } from "@/lib/assistant/flags";
 import { assistantError, assistantErrorResponse } from "@/lib/assistant/http";
-import { appendExchange, loadConversation } from "@/lib/assistant/conversation";
+import {
+  conversationMemoryAvailable,
+  extendConversation,
+  openConversation,
+} from "@/lib/assistant/conversation";
 import { runTurn, type TurnEvent } from "@/lib/assistant/orchestrator";
 import { getProvider } from "@/lib/assistant/provider";
 import { recordAudit } from "@/lib/audit/record";
@@ -24,6 +28,14 @@ import { InMemoryRateLimiter } from "@/lib/security/rate-limit";
  */
 export const dynamic = "force-dynamic";
 
+/**
+ * A grounded answer means a model round-trip, tools, and another
+ * round-trip to read them: 5-15s is normal and the platform default of 10s
+ * would cut the interesting questions in half. Streaming does not exempt it —
+ * the limit is on the function, not the first byte.
+ */
+export const maxDuration = 60;
+
 /** SEC-07: a turn is expensive, so cap it per user rather than per IP. */
 const turnLimiter = new InMemoryRateLimiter(20, 60_000);
 
@@ -32,11 +44,14 @@ const bodySchema = z.object({
   input: z.string().trim().min(1).max(2000),
   locale: z.enum(["en", "es"]).optional(),
   /**
-   * Which conversation this belongs to. The client supplies an id, never the
-   * history itself: the server holds what was said, so nothing the client
-   * sends can rewrite the past.
+   * The sealed history returned by the previous turn.
+   *
+   * The client carries it but cannot read or alter it: it is encrypted and
+   * authenticated against the user, so this is still not a channel for
+   * rewriting the past. Carrying it removes the need for a shared store, which
+   * is what makes the assistant work across serverless instances.
    */
-  conversationId: z.string().min(1).max(100).optional(),
+  conversation: z.string().max(131072).optional(),
   /**
    * How the user is interacting. Voice answers are phrased for listening —
    * the permissions do not change, only the wording.
@@ -87,10 +102,10 @@ export async function POST(request: Request) {
       );
     }
 
-    const conversationId = parsed.data.conversationId;
-    const history = conversationId
-      ? loadConversation(principal.authUserId, conversationId)
-      : [];
+    const carried = conversationMemoryAvailable()
+      ? parsed.data.conversation
+      : undefined;
+    const history = openConversation(principal.authUserId, carried);
 
     const ctx = {
       principal,
@@ -105,7 +120,7 @@ export async function POST(request: Request) {
         ctx,
         input: parsed.data.input,
         history,
-        conversationId,
+        carried,
         requestId: parsed.data.requestId,
       });
     }
@@ -117,16 +132,16 @@ export async function POST(request: Request) {
       history,
     });
 
-    // Remember the exchange so the next turn can refer back to it. Refusals
-    // are recorded too: "why not?" is a reasonable follow-up.
-    if (conversationId) {
-      appendExchange(
-        principal.authUserId,
-        conversationId,
-        parsed.data.input,
-        outcome.message,
-      );
-    }
+    // Reseal so the next turn can refer back to this one. Refusals are carried
+    // too: "why not?" is a reasonable follow-up.
+    const conversation = conversationMemoryAvailable()
+      ? extendConversation(
+          principal.authUserId,
+          carried,
+          parsed.data.input,
+          outcome.message,
+        )
+      : undefined;
 
     // Audit the turn, never its content: the question and the answer are PHI
     // in every way that matters (SEC-06, §8.6).
@@ -139,7 +154,6 @@ export async function POST(request: Request) {
         outcome: outcome.kind,
         toolsUsed: outcome.toolsUsed,
         terminatedByServer: outcome.terminatedByServer ?? false,
-        conversationId,
         requestId: parsed.data.requestId,
       },
     });
@@ -150,7 +164,7 @@ export async function POST(request: Request) {
       spoken: outcome.spoken,
       options: outcome.options,
       toolsUsed: outcome.toolsUsed,
-      conversationId,
+      conversation,
     });
   } catch (error) {
     return assistantErrorResponse(error);
@@ -174,7 +188,7 @@ function streamTurn(params: {
   ctx: Parameters<typeof runTurn>[0]["ctx"];
   input: string;
   history: Parameters<typeof runTurn>[0]["history"];
-  conversationId?: string;
+  carried?: string;
   requestId?: string;
 }): Response {
   const encoder = new TextEncoder();
@@ -201,14 +215,14 @@ function streamTurn(params: {
           },
         });
 
-        if (params.conversationId) {
-          appendExchange(
-            params.principal.authUserId,
-            params.conversationId,
-            params.input,
-            outcome.message,
-          );
-        }
+        const conversation = conversationMemoryAvailable()
+          ? extendConversation(
+              params.principal.authUserId,
+              params.carried,
+              params.input,
+              outcome.message,
+            )
+          : undefined;
 
         await recordAudit({
           organizationId: params.principal.organizationId,
@@ -219,7 +233,6 @@ function streamTurn(params: {
             outcome: outcome.kind,
             toolsUsed: outcome.toolsUsed,
             terminatedByServer: outcome.terminatedByServer ?? false,
-            conversationId: params.conversationId,
             requestId: params.requestId,
             streamed: true,
           },
@@ -231,7 +244,7 @@ function streamTurn(params: {
           spoken: outcome.spoken,
           options: outcome.options,
           toolsUsed: outcome.toolsUsed,
-          conversationId: params.conversationId,
+          conversation,
         });
       } catch {
         // The status line is already 200 by now, so a failure has to travel as

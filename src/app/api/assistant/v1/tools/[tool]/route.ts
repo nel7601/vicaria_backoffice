@@ -24,6 +24,11 @@ import { CLINIC_TZ } from "@/lib/domain/timezone";
  */
 export const dynamic = "force-dynamic";
 
+/**
+ * One tool is a query or two; this is headroom, not an expectation.
+ */
+export const maxDuration = 30;
+
 export async function POST(
   request: Request,
   // Written out rather than using the generated RouteContext helper, which
