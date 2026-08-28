@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requestPrincipal } from "@/lib/assistant/auth/request-identity";
 import { assistantFlags } from "@/lib/assistant/flags";
 import { assistantError, assistantErrorResponse } from "@/lib/assistant/http";
+import { appendExchange, loadConversation } from "@/lib/assistant/conversation";
 import { runTurn } from "@/lib/assistant/orchestrator";
 import { getProvider } from "@/lib/assistant/provider";
 import { recordAudit } from "@/lib/audit/record";
@@ -30,6 +31,12 @@ const bodySchema = z.object({
   /** What the user said or typed. Treated as data, never as instruction. */
   input: z.string().trim().min(1).max(2000),
   locale: z.enum(["en", "es"]).optional(),
+  /**
+   * Which conversation this belongs to. The client supplies an id, never the
+   * history itself: the server holds what was said, so nothing the client
+   * sends can rewrite the past.
+   */
+  conversationId: z.string().min(1).max(100).optional(),
   /** Client-generated, for idempotency and for correlating logs. */
   requestId: z.string().max(100).optional(),
 });
@@ -70,11 +77,28 @@ export async function POST(request: Request) {
       );
     }
 
+    const conversationId = parsed.data.conversationId;
+    const history = conversationId
+      ? loadConversation(principal.authUserId, conversationId)
+      : [];
+
     const outcome = await runTurn({
       provider: getProvider(),
       ctx: { principal, now: new Date(), timeZone: CLINIC_TZ },
       input: parsed.data.input,
+      history,
     });
+
+    // Remember the exchange so the next turn can refer back to it. Refusals
+    // are recorded too: "why not?" is a reasonable follow-up.
+    if (conversationId) {
+      appendExchange(
+        principal.authUserId,
+        conversationId,
+        parsed.data.input,
+        outcome.message,
+      );
+    }
 
     // Audit the turn, never its content: the question and the answer are PHI
     // in every way that matters (SEC-06, §8.6).
@@ -87,6 +111,7 @@ export async function POST(request: Request) {
         outcome: outcome.kind,
         toolsUsed: outcome.toolsUsed,
         terminatedByServer: outcome.terminatedByServer ?? false,
+        conversationId,
         requestId: parsed.data.requestId,
       },
     });
@@ -96,6 +121,7 @@ export async function POST(request: Request) {
       message: outcome.message,
       options: outcome.options,
       toolsUsed: outcome.toolsUsed,
+      conversationId,
     });
   } catch (error) {
     return assistantErrorResponse(error);

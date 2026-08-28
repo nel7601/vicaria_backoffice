@@ -49,6 +49,11 @@ export interface RunTurnParams {
   ctx: ToolContext;
   /** What the user said. Treated as data, never as instructions. */
   input: string;
+  /**
+   * Earlier turns of this conversation, so "and next week?" resolves.
+   * Server-held: the client never supplies history, only its id.
+   */
+  history?: AiMessage[];
   limits?: Partial<OrchestratorLimits>;
   now?: () => number;
 }
@@ -70,7 +75,10 @@ export async function runTurn(params: RunTurnParams): Promise<TurnOutcome> {
     respondToolSpec(),
   ];
 
-  const messages: AiMessage[] = [{ role: "user", content: params.input }];
+  const messages: AiMessage[] = [
+    ...(params.history ?? []),
+    { role: "user", content: params.input },
+  ];
   const toolsUsed: string[] = [];
   let toolCallBudget = limits.maxToolCalls;
 
