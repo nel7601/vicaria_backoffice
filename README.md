@@ -40,6 +40,29 @@ the app requires a configured Supabase project to sign in.
 | `npm run db:push` | Push schema to the database (dev only) |
 | `npm run seed` | Load synthetic data (never PHI) |
 
+### Migrations
+
+Drizzle tracks what has been applied in `drizzle.__drizzle_migrations`, and
+decides what to run by comparing the last recorded timestamp against the `when`
+of each entry in `supabase/migrations/meta/_journal.json`. Every `.sql` file in
+that folder must have a journal entry, in order, or it will never run.
+
+Two kinds of migration live side by side:
+
+- **Generated**: change `src/lib/db/schema/`, run `npm run db:generate`. It
+  diffs the schema against the newest snapshot in `meta/` and writes only the
+  delta, plus a new snapshot.
+- **Hand-written**: extensions, indexes, RLS policies and anything else Drizzle
+  does not model. Write the `.sql` file, then add its entry to `_journal.json`
+  with a `when` greater than the previous one. Without that entry the file is
+  invisible to `db:migrate`.
+
+Snapshots chain through `prevId`, so a hand-added snapshot must point at the id
+of the one before it.
+
+For a large table, build indexes with `CREATE INDEX CONCURRENTLY` — a plain
+`CREATE INDEX` locks writes while it runs.
+
 ## Project layout
 
 ```

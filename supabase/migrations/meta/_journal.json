@@ -12,22 +12,85 @@
     {
       "idx": 1,
       "version": "7",
-      "when": 1784382219035,
-      "tag": "0001_service_categories",
+      "when": 1784308415099,
+      "tag": "0001_indexes_rls",
       "breakpoints": true
     },
     {
       "idx": 2,
       "version": "7",
-      "when": 1787689755886,
-      "tag": "0002_home_care",
+      "when": 1784394815099,
+      "tag": "0002_rls_policies",
       "breakpoints": true
     },
     {
       "idx": 3,
       "version": "7",
-      "when": 1787754494865,
-      "tag": "0003_spec2_alignment",
+      "when": 1784481215099,
+      "tag": "0003_receipts_payment_nullable",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1784567615099,
+      "tag": "0004_service_categories",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1784654015099,
+      "tag": "0005_home_care",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1784740415099,
+      "tag": "0006_spec2_alignment",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1784826815099,
+      "tag": "0007_shift_overlap_missed",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1784913215099,
+      "tag": "0008_invoice_notes",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1784999615099,
+      "tag": "0009_patient_chart_notes",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1785086015099,
+      "tag": "0010_patient_forms",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1785172415099,
+      "tag": "0011_template_archive",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1785258815099,
+      "tag": "0012_patient_search_trgm",
       "breakpoints": true
     }
   ]
