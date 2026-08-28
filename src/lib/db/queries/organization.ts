@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { eq, isNotNull } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import {
   companySettings,
@@ -98,6 +98,8 @@ export async function listEmployees(organizationId: string) {
       isCaregiver: employees.isCaregiver,
       email: users.email,
       isActive: users.isActive,
+      /** False means no sign-in account is linked, so RLS locks them out. */
+      hasAccount: isNotNull(users.authUserId),
       role: userRoles.role,
     })
     .from(employees)

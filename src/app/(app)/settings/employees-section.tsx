@@ -9,6 +9,7 @@ import { ROLES } from "@/lib/auth/rbac";
 import {
   createEmployeeAction,
   deleteEmployeeAction,
+  inviteEmployeeAction,
   setEmployeeArchivedAction,
   updateEmployeeAction,
 } from "./actions";
@@ -25,6 +26,8 @@ export interface EmployeeRow {
   isCaregiver: boolean;
   email: string;
   isActive: boolean;
+  /** False when no sign-in account is linked: RLS locks them out entirely. */
+  hasAccount: boolean;
   /** All roles held by this employee (one row per employee). */
   roles: string[];
 }
@@ -99,6 +102,22 @@ export function EmployeesSection({
     });
   }
 
+  function invite(e: EmployeeRow) {
+    setDeleteError(null);
+    setMessage(null);
+    startTransition(async () => {
+      const res = await inviteEmployeeAction(e.id);
+      if (res.ok) {
+        setMessage(
+          res.warning ?? `Invitation sent to ${e.email}.`,
+        );
+        router.refresh();
+      } else {
+        setDeleteError(res.error ?? "Could not invite this employee.");
+      }
+    });
+  }
+
   function remove(e: EmployeeRow) {
     if (
       !window.confirm(
@@ -139,7 +158,7 @@ export function EmployeesSection({
           isPractitioner: false,
           isCaregiver: false,
         });
-        setMessage("Employee created.");
+        setMessage(res.warning ?? `Employee created and invited at ${values.email}.`);
       } else {
         setMessage(res.error ?? "Failed.");
       }
@@ -179,11 +198,33 @@ export function EmployeesSection({
             archived
           </span>
         )}
+        {e.isActive && !e.hasAccount && (
+          <span
+            className="rounded-full bg-danger/10 px-2 py-0.5 text-danger"
+            title="No sign-in account is linked, so this person cannot access the backoffice."
+          >
+            cannot sign in
+          </span>
+        )}
         {canEdit && (
           <span className="flex gap-1.5">
             {e.isActive && (
               <button onClick={() => openEdit(e)} className={editBtnClass}>
                 Edit
+              </button>
+            )}
+            {e.isActive && (
+              <button
+                onClick={() => invite(e)}
+                disabled={pending}
+                className={editBtnClass}
+                title={
+                  e.hasAccount
+                    ? "Send the invitation email again."
+                    : "Create the sign-in account and email an invitation."
+                }
+              >
+                {e.hasAccount ? "Re-invite" : "Invite"}
               </button>
             )}
             <button
@@ -229,6 +270,14 @@ export function EmployeesSection({
         <ul className="divide-y divide-border rounded-md border border-border">
           {archived.map(renderRow)}
         </ul>
+      )}
+
+      {active.some((e) => !e.hasAccount) && (
+        <p className="text-sm text-muted">
+          Some employees have no sign-in account and cannot access the
+          backoffice. Use <strong>Invite</strong> to create it and email them a
+          link.
+        </p>
       )}
 
       {deleteError && !editingId && (

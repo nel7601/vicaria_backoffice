@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { eq } from "drizzle-orm";
 import { authorize } from "@/lib/auth/authorize";
+import { provisionEmployeeAccount } from "@/lib/auth/provisioning";
 import { recordAudit } from "@/lib/audit/record";
 import { getDb } from "@/lib/db";
 import {
@@ -37,6 +38,8 @@ import { and, isNull } from "drizzle-orm";
 export interface ActionResult {
   ok: boolean;
   error?: string;
+  /** Set when the action succeeded but something secondary needs attention. */
+  warning?: string;
 }
 
 function blankToNull(v: string | undefined): string | null {
@@ -1092,6 +1095,16 @@ export async function createEmployeeAction(raw: unknown): Promise<ActionResult> 
     return { userId: u.id, employeeId: e.id };
   });
 
+  // An employee without a linked auth account cannot sign in at all: RLS
+  // resolves the current user through users.auth_user_id. Provision it here so
+  // the two halves never drift apart.
+  const provision = await provisionEmployeeAccount({
+    organizationId: org.id,
+    userId: result.userId,
+    email: data.email,
+    roles: [data.role],
+  });
+
   await recordAudit({
     organizationId: org.id,
     actorUserId: user.authId,
@@ -1102,10 +1115,100 @@ export async function createEmployeeAction(raw: unknown): Promise<ActionResult> 
       email: data.email,
       role: data.role,
       isPractitioner: data.isPractitioner,
+      accountLinked: provision.ok,
     },
     reason: "Employee provisioned via Settings",
   });
 
   revalidatePath("/settings");
-  return { ok: true };
+  return provision.ok
+    ? { ok: true }
+    : {
+        ok: true,
+        warning: `Employee created, but the sign-in account was not: ${provision.error} Use Invite to retry.`,
+      };
+}
+
+/**
+ * Send (or re-send) the sign-in invitation for an existing employee and link
+ * the resulting account.
+ *
+ * Exists because employees created before accounts were provisioned
+ * automatically have no auth_user_id, and are therefore locked out of both the
+ * backoffice and the assistant API with no way back through the UI.
+ */
+export async function inviteEmployeeAction(
+  employeeId: string,
+): Promise<ActionResult> {
+  const actor = await authorize("users_roles", "create");
+  const org = await getPrimaryOrganization();
+  if (!org) return { ok: false, error: "Organization not found." };
+
+  const db = getDb();
+  const [target] = await db
+    .select({
+      userId: users.id,
+      email: users.email,
+      isActive: users.isActive,
+      authUserId: users.authUserId,
+      organizationId: employees.organizationId,
+    })
+    .from(employees)
+    .innerJoin(users, eq(users.id, employees.userId))
+    .where(eq(employees.id, employeeId))
+    .limit(1);
+
+  if (!target || target.organizationId !== org.id) {
+    return { ok: false, error: "Employee not found." };
+  }
+  if (!target.isActive) {
+    return {
+      ok: false,
+      error: "This employee is archived. Unarchive them before inviting.",
+    };
+  }
+
+  const roles = (
+    await db
+      .select({ role: userRoles.role })
+      .from(userRoles)
+      .where(eq(userRoles.userId, target.userId))
+  ).map((r) => r.role);
+
+  if (roles.length === 0) {
+    return {
+      ok: false,
+      error: "Assign a role before inviting: an account with no role has no access.",
+    };
+  }
+
+  const provision = await provisionEmployeeAccount({
+    organizationId: org.id,
+    userId: target.userId,
+    email: target.email,
+    roles,
+  });
+
+  if (!provision.ok) return { ok: false, error: provision.error };
+
+  await recordAudit({
+    organizationId: org.id,
+    actorUserId: actor.authId,
+    action: "update",
+    entityType: "employee",
+    entityId: employeeId,
+    before: { accountLinked: target.authUserId !== null },
+    after: { accountLinked: true, invitationSent: provision.invited },
+    reason: provision.invited
+      ? "Sign-in invitation sent from Settings"
+      : "Existing auth account linked from Settings",
+  });
+
+  revalidatePath("/settings");
+  return {
+    ok: true,
+    warning: provision.invited
+      ? undefined
+      : "That address already had an account, so it was linked without sending a new email.",
+  };
 }
