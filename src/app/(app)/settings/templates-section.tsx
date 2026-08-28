@@ -90,6 +90,7 @@ export function TemplatesSection({
   const [serviceId, setServiceId] = useState("");
   const [fields, setFields] = useState<FieldDraft[]>([{ ...EMPTY_FIELD }]);
   const [error, setError] = useState<string | null>(null);
+  const [showArchived, setShowArchived] = useState(false);
 
   function openNew() {
     setName("");
@@ -173,6 +174,60 @@ export function TemplatesSection({
     });
   }
 
+  const activeTemplates = templates.filter((t) => !t.archived);
+  const archivedTemplates = templates.filter((t) => t.archived);
+
+  const renderTemplate = (t: TemplateRow) => (
+    <li
+      key={t.templateId}
+      className={`flex items-center justify-between p-3 text-sm ${t.archived ? "opacity-60" : ""}`}
+    >
+      <div>
+        <div className="font-medium">
+          {t.name}{" "}
+          <span className="text-xs text-muted">
+            v{t.version ?? "—"} · {t.fields.length} field
+            {t.fields.length === 1 ? "" : "s"}
+          </span>
+          {t.archived && (
+            <span className="ml-1.5 rounded-full bg-border px-2 py-0.5 text-xs text-muted">
+              archived
+            </span>
+          )}
+        </div>
+        <div className="text-xs text-muted">
+          {t.serviceName ? `Linked to ${t.serviceName}` : "Not linked to a service"}
+          {t.usageCount > 0
+            ? ` · used by ${t.usageCount} encounter${t.usageCount === 1 ? "" : "s"}`
+            : ""}
+        </div>
+      </div>
+      {canEdit && (
+        <span className="flex gap-1.5">
+          {!t.archived && (
+            <button onClick={() => openEdit(t)} className={editBtnClass}>
+              Edit
+            </button>
+          )}
+          <button
+            onClick={() => setArchived(t, !t.archived)}
+            disabled={pending}
+            className={editBtnClass}
+          >
+            {t.archived ? "Unarchive" : "Archive"}
+          </button>
+          <button
+            onClick={() => remove(t)}
+            disabled={pending}
+            className={deleteBtnClass}
+          >
+            Delete
+          </button>
+        </span>
+      )}
+    </li>
+  );
+
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted">
@@ -182,59 +237,27 @@ export function TemplatesSection({
       </p>
 
       <ul className="divide-y divide-border rounded-md border border-border">
-        {templates.length === 0 && (
+        {activeTemplates.length === 0 && (
           <li className="p-3 text-sm text-muted">No templates yet.</li>
         )}
-        {templates.map((t) => (
-          <li
-            key={t.templateId}
-            className={`flex items-center justify-between p-3 text-sm ${t.archived ? "opacity-60" : ""}`}
-          >
-            <div>
-              <div className="font-medium">
-                {t.name}{" "}
-                <span className="text-xs text-muted">
-                  v{t.version ?? "—"} · {t.fields.length} field
-                  {t.fields.length === 1 ? "" : "s"}
-                </span>
-                {t.archived && (
-                  <span className="ml-1.5 rounded-full bg-border px-2 py-0.5 text-xs text-muted">
-                    archived
-                  </span>
-                )}
-              </div>
-              <div className="text-xs text-muted">
-                {t.serviceName ? `Linked to ${t.serviceName}` : "Not linked to a service"}
-                {t.usageCount > 0 ? ` · used by ${t.usageCount} encounter${t.usageCount === 1 ? "" : "s"}` : ""}
-              </div>
-            </div>
-            {canEdit && (
-              <span className="flex gap-1.5">
-                {!t.archived && (
-                  <button onClick={() => openEdit(t)} className={editBtnClass}>
-                    Edit
-                  </button>
-                )}
-                <button
-                  onClick={() => setArchived(t, !t.archived)}
-                  disabled={pending}
-                  className={editBtnClass}
-                >
-                  {t.archived ? "Unarchive" : "Archive"}
-                </button>
-                <button
-                  onClick={() => remove(t)}
-                  disabled={pending}
-                  className={deleteBtnClass}
-                >
-                  Delete
-                </button>
-              </span>
-            )}
-          </li>
-        ))}
+        {activeTemplates.map(renderTemplate)}
       </ul>
 
+      {archivedTemplates.length > 0 && (
+        <button
+          onClick={() => setShowArchived((v) => !v)}
+          className="text-sm text-primary hover:underline"
+        >
+          {showArchived
+            ? "Hide archived"
+            : `Show archived (${archivedTemplates.length})`}
+        </button>
+      )}
+      {showArchived && archivedTemplates.length > 0 && (
+        <ul className="divide-y divide-border rounded-md border border-border">
+          {archivedTemplates.map(renderTemplate)}
+        </ul>
+      )}
       {error && editing === null && <p className="text-sm text-danger">{error}</p>}
 
       {canEdit && editing === null && (

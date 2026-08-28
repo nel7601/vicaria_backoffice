@@ -524,6 +524,67 @@ const IN_USE_MSG =
  * menu while keeping history intact, and can be unarchived later.
  */
 
+/**
+ * Archive (deactivate) or unarchive an employee. Archived employees leave
+ * every selection menu and lose sign-in access; history stays intact.
+ */
+export async function setEmployeeArchivedAction(
+  employeeId: string,
+  archived: boolean,
+): Promise<ActionResult> {
+  const user = await authorize("users_roles", "update");
+  const org = await getPrimaryOrganization();
+  if (!org) return { ok: false, error: "Organization not found." };
+
+  const db = getDb();
+  const [emp] = await db
+    .select({ id: employees.id, userId: employees.userId })
+    .from(employees)
+    .where(
+      and(eq(employees.organizationId, org.id), eq(employees.id, employeeId)),
+    )
+    .limit(1);
+  if (!emp) return { ok: false, error: "Employee not found." };
+
+  const [target] = await db
+    .select({ authUserId: users.authUserId, isActive: users.isActive })
+    .from(users)
+    .where(eq(users.id, emp.userId))
+    .limit(1);
+
+  await db
+    .update(users)
+    .set({ isActive: !archived, updatedAt: new Date() })
+    .where(eq(users.id, emp.userId));
+
+  // Best-effort: block/unblock sign-in on the auth account.
+  if (target?.authUserId) {
+    try {
+      const { createAdminClient } = await import("@/lib/supabase/admin");
+      const admin = createAdminClient();
+      await admin.auth.admin.updateUserById(target.authUserId, {
+        ban_duration: archived ? "876000h" : "none",
+      });
+    } catch (e) {
+      console.error("Auth sync failed (ban):", e);
+    }
+  }
+
+  await recordAudit({
+    organizationId: org.id,
+    actorUserId: user.authId,
+    action: archived ? "archive" : "unarchive",
+    entityType: "employee",
+    entityId: employeeId,
+    before: { isActive: target?.isActive },
+    after: { isActive: !archived },
+  });
+
+  revalidatePath("/settings");
+  revalidatePath("/calendar");
+  return { ok: true };
+}
+
 /** Archive or unarchive an encounter template. */
 export async function setTemplateArchivedAction(
   templateId: string,

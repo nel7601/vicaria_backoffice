@@ -33,6 +33,7 @@ export function CategoriesSection({
   const [nameEs, setNameEs] = useState("");
   const [isActive, setIsActive] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showArchived, setShowArchived] = useState(false);
 
   function openNew() {
     setName("");
@@ -90,6 +91,11 @@ export function CategoriesSection({
     });
   }
 
+  const archivedCount = categories.filter((c) => !c.isActive).length;
+  const shownCategories = showArchived
+    ? categories
+    : categories.filter((c) => c.isActive);
+
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted">
@@ -97,10 +103,10 @@ export function CategoriesSection({
         category updates the services that use it.
       </p>
       <div className="flex flex-wrap gap-2">
-        {categories.length === 0 && (
+        {shownCategories.length === 0 && (
           <span className="text-sm text-muted">No categories yet.</span>
         )}
-        {categories.map((c) => (
+        {shownCategories.map((c) => (
           <span
             key={c.id}
             className={`inline-flex items-center gap-2 rounded-md border border-border px-3 py-1.5 text-sm ${
@@ -141,6 +147,15 @@ export function CategoriesSection({
           </span>
         ))}
       </div>
+
+      {archivedCount > 0 && (
+        <button
+          onClick={() => setShowArchived((v) => !v)}
+          className="text-sm text-primary hover:underline"
+        >
+          {showArchived ? "Hide archived" : `Show archived (${archivedCount})`}
+        </button>
+      )}
 
       {error && editing === null && (
         <p className="text-sm text-danger">{error}</p>

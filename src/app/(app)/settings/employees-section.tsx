@@ -9,6 +9,7 @@ import { ROLES } from "@/lib/auth/rbac";
 import {
   createEmployeeAction,
   deleteEmployeeAction,
+  setEmployeeArchivedAction,
   updateEmployeeAction,
 } from "./actions";
 import { Button } from "@/components/ui/button";
@@ -50,6 +51,7 @@ export function EmployeesSection({
   });
   const [editError, setEditError] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [showArchived, setShowArchived] = useState(false);
 
   function openEdit(e: EmployeeRow) {
     setEdit({
@@ -88,6 +90,15 @@ export function EmployeesSection({
     });
   }
 
+  function setArchived(e: EmployeeRow, archive: boolean) {
+    setDeleteError(null);
+    startTransition(async () => {
+      const res = await setEmployeeArchivedAction(e.id, archive);
+      if (res.ok) router.refresh();
+      else setDeleteError(res.error ?? "Could not update employee.");
+    });
+  }
+
   function remove(e: EmployeeRow) {
     if (
       !window.confirm(
@@ -118,7 +129,16 @@ export function EmployeesSection({
     startTransition(async () => {
       const res = await createEmployeeAction(values);
       if (res.ok) {
-        reset({ role: "reception", isPractitioner: false, isCaregiver: false });
+        // Clear every input so the form is ready for the next employee.
+        reset({
+          firstName: "",
+          lastName: "",
+          email: "",
+          title: "",
+          role: "reception",
+          isPractitioner: false,
+          isCaregiver: false,
+        });
         setMessage("Employee created.");
       } else {
         setMessage(res.error ?? "Failed.");
@@ -126,65 +146,90 @@ export function EmployeesSection({
     });
   }
 
+  const active = employees.filter((e) => e.isActive);
+  const archived = employees.filter((e) => !e.isActive);
+
+  const renderRow = (e: EmployeeRow) => (
+    <li key={e.id} className="flex items-center justify-between p-3 text-sm">
+      <div className={e.isActive ? "" : "opacity-60"}>
+        <div className="font-medium">
+          {e.firstName} {e.lastName}
+          {e.title ? <span className="text-muted"> · {e.title}</span> : null}
+        </div>
+        <div className="text-xs text-muted">{e.email}</div>
+      </div>
+      <div className="flex flex-wrap items-center gap-2 text-xs">
+        {e.roles.map((r) => (
+          <span key={r} className="rounded-full bg-primary/10 px-2 py-0.5 text-primary">
+            {r}
+          </span>
+        ))}
+        {e.isPractitioner && (
+          <span className="rounded-full bg-success/10 px-2 py-0.5 text-success">
+            sees patients
+          </span>
+        )}
+        {e.isCaregiver && (
+          <span className="rounded-full bg-primary-soft px-2 py-0.5 text-primary-hover">
+            caregiver
+          </span>
+        )}
+        {!e.isActive && (
+          <span className="rounded-full bg-border px-2 py-0.5 text-muted">
+            archived
+          </span>
+        )}
+        {canEdit && (
+          <span className="flex gap-1.5">
+            {e.isActive && (
+              <button onClick={() => openEdit(e)} className={editBtnClass}>
+                Edit
+              </button>
+            )}
+            <button
+              onClick={() => setArchived(e, e.isActive)}
+              disabled={pending}
+              className={editBtnClass}
+            >
+              {e.isActive ? "Archive" : "Unarchive"}
+            </button>
+            <button
+              onClick={() => remove(e)}
+              disabled={pending}
+              className={deleteBtnClass}
+            >
+              Delete
+            </button>
+          </span>
+        )}
+      </div>
+    </li>
+  );
+
   return (
     <div className="space-y-4">
       <ul className="divide-y divide-border rounded-md border border-border">
-        {employees.length === 0 && (
-          <li className="p-3 text-sm text-muted">No employees yet.</li>
+        {active.length === 0 && (
+          <li className="p-3 text-sm text-muted">No active employees.</li>
         )}
-        {employees.map((e) => (
-          <li key={e.id} className="flex items-center justify-between p-3 text-sm">
-            <div>
-              <div className="font-medium">
-                {e.firstName} {e.lastName}
-                {e.title ? (
-                  <span className="text-muted"> · {e.title}</span>
-                ) : null}
-              </div>
-              <div className="text-xs text-muted">{e.email}</div>
-            </div>
-            <div className="flex flex-wrap items-center gap-2 text-xs">
-              {e.roles.map((r) => (
-                <span
-                  key={r}
-                  className="rounded-full bg-primary/10 px-2 py-0.5 text-primary"
-                >
-                  {r}
-                </span>
-              ))}
-              {e.isPractitioner && (
-                <span className="rounded-full bg-success/10 px-2 py-0.5 text-success">
-                  sees patients
-                </span>
-              )}
-              {e.isCaregiver && (
-                <span className="rounded-full bg-primary-soft px-2 py-0.5 text-primary-hover">
-                  caregiver
-                </span>
-              )}
-              {!e.isActive && (
-                <span className="rounded-full bg-danger/10 px-2 py-0.5 text-danger">
-                  inactive
-                </span>
-              )}
-              {canEdit && (
-                <span className="flex gap-1.5">
-                  <button onClick={() => openEdit(e)} className={editBtnClass}>
-                    Edit
-                  </button>
-                  <button
-                    onClick={() => remove(e)}
-                    disabled={pending}
-                    className={deleteBtnClass}
-                  >
-                    Delete
-                  </button>
-                </span>
-              )}
-            </div>
-          </li>
-        ))}
+        {active.map(renderRow)}
       </ul>
+
+      {archived.length > 0 && (
+        <button
+          onClick={() => setShowArchived((v) => !v)}
+          className="text-sm text-primary hover:underline"
+        >
+          {showArchived
+            ? "Hide archived"
+            : `Show archived (${archived.length})`}
+        </button>
+      )}
+      {showArchived && archived.length > 0 && (
+        <ul className="divide-y divide-border rounded-md border border-border">
+          {archived.map(renderRow)}
+        </ul>
+      )}
 
       {deleteError && !editingId && (
         <p className="text-sm text-danger">{deleteError}</p>

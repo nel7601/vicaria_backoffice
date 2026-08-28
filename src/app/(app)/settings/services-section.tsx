@@ -84,6 +84,12 @@ export function ServicesSection({
   const [editing, setEditing] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(EMPTY);
   const [error, setError] = useState<string | null>(null);
+  const [showArchived, setShowArchived] = useState(false);
+
+  const archivedCount = services.filter((s) => !s.isActive).length;
+  const shownServices = showArchived
+    ? services
+    : services.filter((s) => s.isActive);
 
   function openNew() {
     setForm(EMPTY);
@@ -173,7 +179,7 @@ export function ServicesSection({
             </tr>
           </thead>
           <tbody>
-            {services.length === 0 && (
+            {shownServices.length === 0 && (
               <tr>
                 <td colSpan={canEdit ? 10 : 9} className="py-6 text-center text-muted">
                   No services yet. Create the first one to use it in
@@ -181,7 +187,7 @@ export function ServicesSection({
                 </td>
               </tr>
             )}
-            {services.map((s) => (
+            {shownServices.map((s) => (
               <tr key={s.id} className="border-b border-border/60">
                 <td className="py-2 pr-4 font-medium">{s.nameEn}</td>
                 <td className="py-2 pr-4">{s.nameEs}</td>
@@ -244,6 +250,15 @@ export function ServicesSection({
           </tbody>
         </table>
       </div>
+
+      {archivedCount > 0 && (
+        <button
+          onClick={() => setShowArchived((v) => !v)}
+          className="text-sm text-primary hover:underline"
+        >
+          {showArchived ? "Hide archived" : `Show archived (${archivedCount})`}
+        </button>
+      )}
 
       {error && editing === null && (
         <p className="text-sm text-danger">{error}</p>

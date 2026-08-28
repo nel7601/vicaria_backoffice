@@ -81,6 +81,7 @@ export async function employeeAppointmentsInWindow(
 
 export async function listActiveEmployees(organizationId: string) {
   const db = getDb();
+  const { users } = await import("@/lib/db/schema");
   return db
     .select({
       id: employees.id,
@@ -89,7 +90,10 @@ export async function listActiveEmployees(organizationId: string) {
       isPractitioner: employees.isPractitioner,
     })
     .from(employees)
-    .where(eq(employees.organizationId, organizationId));
+    .innerJoin(users, eq(users.id, employees.userId))
+    .where(
+      and(eq(employees.organizationId, organizationId), eq(users.isActive, true)),
+    );
 }
 
 /** Full appointment detail with related names and its status history. */
