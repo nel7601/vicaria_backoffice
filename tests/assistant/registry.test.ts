@@ -140,10 +140,11 @@ describe("catalogue shape", () => {
     }
   });
 
-  it("gates every patient-facing tool behind a resource", () => {
+  it("keeps every data tool away from a principal with no roles", () => {
     for (const tool of toolsFor(principal(["owner"]))) {
       if (tool.name === "resolve_date") continue;
-      expect(tool.resource, tool.name).not.toBeNull();
+      // Either a resource gates it, or it gates itself (run_report).
+      expect(tool.resource ?? tool.isAvailable, tool.name).toBeTruthy();
       expect(canUseTool(principal([]), tool), tool.name).toBe(false);
     }
   });

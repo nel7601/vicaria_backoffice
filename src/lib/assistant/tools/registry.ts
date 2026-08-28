@@ -4,8 +4,15 @@ import {
   countCompletedAppointmentsTool,
   getAppointmentsForRangeTool,
 } from "./appointments";
+import {
+  getCareShiftsForRangeTool,
+  getFollowUpTasksTool,
+  getInvoicesTool,
+} from "./operations";
+import { getPatientSummaryTool } from "./patient-summary";
 import { resolvePatientTool } from "./patients";
 import { resolveDateTool } from "./resolve-date-tool";
+import { runReportTool } from "./reports";
 import {
   ToolInputError,
   ToolNotAvailableError,
@@ -28,6 +35,11 @@ const ALL_TOOLS: AssistantTool[] = [
   getAppointmentsForRangeTool as AssistantTool,
   countCompletedAppointmentsTool as AssistantTool,
   resolvePatientTool as AssistantTool,
+  getPatientSummaryTool as AssistantTool,
+  getCareShiftsForRangeTool as AssistantTool,
+  getFollowUpTasksTool as AssistantTool,
+  getInvoicesTool as AssistantTool,
+  runReportTool as AssistantTool,
 ];
 
 /** May this principal use this tool at all? */
@@ -35,6 +47,7 @@ export function canUseTool(
   principal: Principal,
   tool: AssistantTool,
 ): boolean {
+  if (tool.isAvailable && !tool.isAvailable(principal)) return false;
   // A tool that reads no patient data needs no resource permission.
   if (tool.resource === null) return true;
   return principalCan(principal, tool.resource, tool.action);

@@ -32,6 +32,12 @@ export interface AssistantTool<Input = unknown, Output = unknown> {
   resource: Resource | null;
   action: Action;
   input: z.ZodType<Input>;
+  /**
+   * Extra availability check for tools whose permission is not a single
+   * resource. `run_report` is the case: each report carries its own resource,
+   * so the tool is only worth offering when at least one is runnable.
+   */
+  isAvailable?(principal: Principal): boolean;
   execute(args: Input, ctx: ToolContext): Promise<Output>;
 }
 
