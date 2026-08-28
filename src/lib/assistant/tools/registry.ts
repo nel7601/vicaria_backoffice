@@ -4,6 +4,7 @@ import {
   countCompletedAppointmentsTool,
   getAppointmentsForRangeTool,
 } from "./appointments";
+import { resolvePatientTool } from "./patients";
 import { resolveDateTool } from "./resolve-date-tool";
 import {
   ToolInputError,
@@ -26,6 +27,7 @@ const ALL_TOOLS: AssistantTool[] = [
   resolveDateTool as AssistantTool,
   getAppointmentsForRangeTool as AssistantTool,
   countCompletedAppointmentsTool as AssistantTool,
+  resolvePatientTool as AssistantTool,
 ];
 
 /** May this principal use this tool at all? */
