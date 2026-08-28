@@ -57,7 +57,7 @@ const callTool = (name: string, args: unknown): AiTurnResponse => ({
 describe("a normal turn", () => {
   it("runs a tool, then returns the structured answer", async () => {
     const provider = new ScriptedProvider([
-      callTool("resolve_date", { kind: "weekday", weekday: "friday", direction: "next" }),
+      callTool("resolve_date", { range: { kind: "weekday", weekday: "friday", direction: "next" } }),
       respond("response", "Friday is 28 August 2026."),
     ]);
 
@@ -77,7 +77,7 @@ describe("a normal turn", () => {
 
   it("feeds the tool result back to the model", async () => {
     const provider = new ScriptedProvider([
-      callTool("resolve_date", { kind: "day", offsetDays: 1 }),
+      callTool("resolve_date", { range: { kind: "day", offsetDays: 1 } }),
       respond("response", "Tomorrow is 27 August."),
     ]);
     await runTurn({ provider, ctx: context(principal(["owner"])), input: "tomorrow?" });
@@ -181,8 +181,8 @@ describe("when the model misbehaves", () => {
 
   it("hands back schema issues so a bad argument can be corrected", async () => {
     const provider = new ScriptedProvider([
-      callTool("resolve_date", { kind: "date", date: "next friday" }),
-      callTool("resolve_date", { kind: "date", date: "2026-08-28" }),
+      callTool("resolve_date", { range: { kind: "date", date: "next friday" } }),
+      callTool("resolve_date", { range: { kind: "date", date: "2026-08-28" } }),
       respond("response", "That is Friday 28 August."),
     ]);
     const outcome = await runTurn({
@@ -204,7 +204,7 @@ describe("when the model misbehaves", () => {
 describe("limits", () => {
   it("stops after the iteration budget and refuses", async () => {
     const looping = Array.from({ length: 20 }, () =>
-      callTool("resolve_date", { kind: "day", offsetDays: 0 }),
+      callTool("resolve_date", { range: { kind: "day", offsetDays: 0 } }),
     );
     const provider = new ScriptedProvider(looping);
 
@@ -225,8 +225,8 @@ describe("limits", () => {
         stopReason: "tool_use" as const,
         text: null,
         toolCalls: [
-          { id: "a", name: "resolve_date", arguments: { kind: "day", offsetDays: 0 } },
-          { id: "b", name: "resolve_date", arguments: { kind: "day", offsetDays: 1 } },
+          { id: "a", name: "resolve_date", arguments: { range: { kind: "day", offsetDays: 0 } } },
+          { id: "b", name: "resolve_date", arguments: { range: { kind: "day", offsetDays: 1 } } },
         ],
       })),
     );
@@ -245,7 +245,7 @@ describe("limits", () => {
   it("stops when the turn runs out of time", async () => {
     let clock = 0;
     const provider = new ScriptedProvider(
-      Array.from({ length: 5 }, () => callTool("resolve_date", { kind: "day", offsetDays: 0 })),
+      Array.from({ length: 5 }, () => callTool("resolve_date", { range: { kind: "day", offsetDays: 0 } })),
     );
 
     const outcome = await runTurn({

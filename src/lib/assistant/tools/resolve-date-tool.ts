@@ -1,5 +1,18 @@
 import { z } from "zod";
 import { clinicNow, dateSpecSchema, resolveDate } from "./resolve-date";
+
+/**
+ * The spec is wrapped in an object rather than passed bare.
+ *
+ * Two reasons, and both are about the caller rather than us. A tool's
+ * parameters must be a JSON Schema object at the root — a bare discriminated
+ * union renders as `anyOf` and OpenAI-compatible providers reject the tool
+ * outright. And every other tool already takes its date as `range`, so this
+ * keeps one shape for the model to learn instead of two.
+ */
+const inputSchema = z.object({ range: dateSpecSchema });
+
+type Input = z.infer<typeof inputSchema>;
 import type { AssistantTool, ToolContext } from "./types";
 
 /**
@@ -11,7 +24,7 @@ import type { AssistantTool, ToolContext } from "./types";
  * it.
  */
 export const resolveDateTool: AssistantTool<
-  z.infer<typeof dateSpecSchema>,
+  Input,
   ReturnType<typeof describeRange>
 > = {
   name: "resolve_date",
@@ -21,9 +34,9 @@ export const resolveDateTool: AssistantTool<
     "Always state the resolved date back to the user before acting on it.",
   resource: null,
   action: "read",
-  input: dateSpecSchema,
+  input: inputSchema,
   async execute(args, ctx: ToolContext) {
-    const range = resolveDate(args, ctx.now, ctx.timeZone);
+    const range = resolveDate(args.range, ctx.now, ctx.timeZone);
     return describeRange(range, ctx);
   },
 };

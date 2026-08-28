@@ -222,9 +222,14 @@ function respondToolSpec(): AiToolSpec {
   return {
     name: RESPOND_TOOL,
     description:
-      "End the turn. Every turn must end with this call. Choose 'response' for a grounded " +
-      "answer, 'refusal' when the question is outside the Vicaria backoffice or not permitted, " +
-      "and 'clarification' when something is ambiguous and you need one more detail.",
+      "End the turn. Every turn must end with this call.\n" +
+      "- 'response': you answered, grounded in tool results.\n" +
+      "- 'clarification': you could answer but need one detail first — an ambiguous name, " +
+      "a date that could mean two things, or a reference like 'those' you cannot resolve. " +
+      "Asking is not refusing: use this whenever the question is legitimate and answerable " +
+      "once the user tells you which one they meant.\n" +
+      "- 'refusal': the question is outside the Vicaria backoffice, or this user is not " +
+      "permitted to know. Use it only when no clarification would make it answerable.",
     inputSchema: zodToJsonSchema(respondSchema),
   };
 }

@@ -64,6 +64,15 @@ export const dateSpecSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("week"), offsetWeeks: z.int().min(-104).max(104) }),
   /** "este mes" (0), "el mes pasado" (-1). Calendar months in clinic time. */
   z.object({ kind: z.literal("month"), offsetMonths: z.int().min(-120).max(120) }),
+  /**
+   * "este año" (0), "el año pasado" (-1).
+   *
+   * Added after a live run: asked how many patients had been seen this year,
+   * the model correctly refused rather than inventing a range, because there
+   * was no shape for it. A refusal to a reasonable question is still a wrong
+   * answer.
+   */
+  z.object({ kind: z.literal("year"), offsetYears: z.int().min(-50).max(50) }),
   /** An explicit inclusive range of days. */
   z.object({ kind: z.literal("range"), from: dayString, to: dayString }),
 ]);
@@ -160,6 +169,20 @@ export function resolveDate(
         to,
         timeZone,
         label: month,
+      };
+    }
+
+    case "year": {
+      const year = Number(today.slice(0, 4)) + spec.offsetYears;
+      const startDay = `${year}-01-01`;
+      const endDay = `${year}-12-31`;
+      return {
+        startDay,
+        endDay,
+        from: zonedMidnightUtc(startDay, timeZone),
+        to: zonedMidnightUtc(`${year + 1}-01-01`, timeZone),
+        timeZone,
+        label: String(year),
       };
     }
 

@@ -100,6 +100,30 @@ describe("weeks and months", () => {
   });
 });
 
+describe("years", () => {
+  it("covers a calendar year", () => {
+    const r = resolveDate({ kind: "year", offsetYears: 0 }, WED);
+    expect([r.startDay, r.endDay]).toEqual(["2026-01-01", "2026-12-31"]);
+  });
+
+  it("steps back a year", () => {
+    const r = resolveDate({ kind: "year", offsetYears: -1 }, WED);
+    expect([r.startDay, r.endDay]).toEqual(["2025-01-01", "2025-12-31"]);
+  });
+
+  it("includes 29 February in a leap year", () => {
+    const r = resolveDate({ kind: "year", offsetYears: 2 }, WED);
+    expect(r.startDay).toBe("2028-01-01");
+    // 366 days, and DST cancels out across a full year.
+    expect(Math.round((r.to.getTime() - r.from.getTime()) / 86_400_000)).toBe(366);
+  });
+
+  it("covers 365 days in an ordinary year", () => {
+    const r = resolveDate({ kind: "year", offsetYears: 0 }, WED);
+    expect(Math.round((r.to.getTime() - r.from.getTime()) / 86_400_000)).toBe(365);
+  });
+});
+
 describe("DST", () => {
   it("covers 23 hours on the spring-forward day", () => {
     // Toronto springs forward on 2026-03-08.

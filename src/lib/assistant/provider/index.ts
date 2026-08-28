@@ -1,19 +1,20 @@
 import { ClaudeProvider } from "./claude";
+import { OpenAiProvider } from "./openai";
 import { UnconfiguredProvider } from "./scripted";
 import type { AiProvider } from "./types";
 
 /**
  * Chooses the provider for a turn.
  *
- * The point of the seam: moving from a public model to one you host is an
- * address and a key, not a rewrite. `ASSISTANT_AI_BASE_URL` overrides where
- * requests go, so a private deployment speaking the same protocol drops in
- * without touching the orchestrator, the tools or the routes.
+ * The default is the OpenAI-compatible one, and that is a decision about where
+ * this is going rather than about which model is better today. Self-hosted
+ * servers — vLLM, Ollama, TGI — speak the chat-completions protocol, so the
+ * same implementation that talks to a public API now will talk to your own
+ * hardware later with a different `ASSISTANT_AI_BASE_URL`. Claude stays
+ * available behind the same seam for anyone who wants it.
  *
- * Defaults to refusing. A deployment that has not been configured on purpose
- * answers "I can't help with that" rather than quietly reaching for a model
- * nobody chose — and until the privacy review closes, that is the correct
- * behaviour rather than an inconvenience.
+ * With nothing configured, every turn is refused rather than quietly routed to
+ * a model nobody chose.
  */
 export function getProvider(): AiProvider {
   const provider = (process.env.ASSISTANT_AI_PROVIDER ?? "").toLowerCase();
@@ -28,10 +29,23 @@ export function getProvider(): AiProvider {
     });
   }
 
+  // "openai" for the public API, "local"/"selfhosted" for anything speaking
+  // the same protocol — the code path is identical, the label is not, so audit
+  // records which one answered.
+  if (["openai", "local", "selfhosted", "vllm", "ollama"].includes(provider)) {
+    const apiKey = process.env.ASSISTANT_AI_API_KEY ?? process.env.OPENAI_API_KEY;
+    if (!apiKey) return new UnconfiguredProvider();
+    return new OpenAiProvider({
+      apiKey,
+      baseURL: process.env.ASSISTANT_AI_BASE_URL,
+      model: process.env.ASSISTANT_AI_MODEL,
+      label: process.env.ASSISTANT_AI_LABEL ?? (provider === "openai" ? "openai" : provider),
+    });
+  }
+
   return new UnconfiguredProvider();
 }
 
-/** Whether a real model is wired in — surfaced by /health so the app can tell. */
 export function providerConfigured(): boolean {
   return getProvider().name !== "unconfigured";
 }

@@ -102,7 +102,7 @@ describe("invocation is re-checked, not trusted", () => {
 
   it("rejects arguments that fail the schema before running anything", async () => {
     await expect(
-      invokeTool("resolve_date", { kind: "weekday", weekday: "someday", direction: "next" }, context(principal(["owner"]))),
+      invokeTool("resolve_date", { range: { kind: "weekday", weekday: "someday", direction: "next" } }, context(principal(["owner"]))),
     ).rejects.toBeInstanceOf(ToolInputError);
   });
 
@@ -111,7 +111,7 @@ describe("invocation is re-checked, not trusted", () => {
     try {
       await invokeTool(
         "resolve_date",
-        { kind: "date", date: "next friday" },
+        { range: { kind: "date", date: "next friday" } },
         context(principal(["owner"])),
       );
     } catch (e) {
@@ -125,7 +125,7 @@ describe("the date tool end to end", () => {
   it("resolves a weekday against the clinic's current day", async () => {
     const result = (await invokeTool(
       "resolve_date",
-      { kind: "weekday", weekday: "friday", direction: "next" },
+      { range: { kind: "weekday", weekday: "friday", direction: "next" } },
       context(principal(["reception"])),
     )) as { startDay: string; resolvedFrom: { today: string } };
     expect(result.startDay).toBe("2026-08-28");
