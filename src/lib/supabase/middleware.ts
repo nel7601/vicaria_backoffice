@@ -7,6 +7,10 @@ const PUBLIC_PATHS = [
   "/api/webhooks",
   "/forgot-password",
   "/reset-password",
+  // Bearer-authenticated API for the assistant APK: it authenticates itself
+  // per request and must answer 401 JSON, never a 302 to the login page which
+  // a mobile client cannot act on.
+  "/api/assistant",
 ];
 
 /**
