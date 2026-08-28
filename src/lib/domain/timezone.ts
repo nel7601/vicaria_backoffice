@@ -64,6 +64,32 @@ export function zonedMidnightUtc(
   return new Date(guess);
 }
 
+/**
+ * UTC instant for a wall-clock time on a given day in the clinic timezone.
+ *
+ * "Tuesday at 3pm" is a local wall-clock time; storing it needs the offset in
+ * force on that date, which changes twice a year. Same fixed-point approach as
+ * `zonedMidnightUtc`, so a DST boundary cannot shift the appointment an hour.
+ */
+export function zonedInstantUtc(
+  dayStr: string,
+  hour: number,
+  minute = 0,
+  timeZone: string = CLINIC_TZ,
+): Date {
+  const [y, mo, d] = dayStr.split("-").map(Number);
+  let guess = Date.UTC(y, mo - 1, d, hour, minute, 0);
+  for (let i = 0; i < 3; i++) {
+    const w = wallClock(new Date(guess), timeZone);
+    const asUtc = Date.UTC(w.y, w.mo - 1, w.d, w.h, w.mi, w.s);
+    const desired = Date.UTC(y, mo - 1, d, hour, minute, 0);
+    const diff = desired - asUtc;
+    if (diff === 0) break;
+    guess += diff;
+  }
+  return new Date(guess);
+}
+
 /** [start, end) UTC window covering one clinic-timezone day. */
 export function clinicDayWindow(
   dayStr: string,
