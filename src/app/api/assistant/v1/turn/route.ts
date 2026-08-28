@@ -13,7 +13,7 @@ import { getProvider } from "@/lib/assistant/provider";
 import { recordAudit } from "@/lib/audit/record";
 import { requireTenant } from "@/lib/auth/principal";
 import { CLINIC_TZ } from "@/lib/domain/timezone";
-import { InMemoryRateLimiter } from "@/lib/security/rate-limit";
+import { checkRateLimit } from "@/lib/security/durable-rate-limit";
 
 /**
  * POST /api/assistant/v1/turn — one turn of the conversation (§4.2).
@@ -37,7 +37,8 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 /** SEC-07: a turn is expensive, so cap it per user rather than per IP. */
-const turnLimiter = new InMemoryRateLimiter(20, 60_000);
+const TURN_LIMIT = 20;
+const TURN_WINDOW_SECONDS = 60;
 
 const bodySchema = z.object({
   /** What the user said or typed. Treated as data, never as instruction. */
@@ -90,7 +91,11 @@ export async function POST(request: Request) {
       await requestPrincipal(request, parsed.data.locale ?? "en"),
     );
 
-    const decision = turnLimiter.check(`turn:${principal.authUserId}`);
+    const decision = await checkRateLimit(
+      `turn:${principal.authUserId}`,
+      TURN_LIMIT,
+      TURN_WINDOW_SECONDS,
+    );
     if (!decision.allowed) {
       return NextResponse.json(
         {

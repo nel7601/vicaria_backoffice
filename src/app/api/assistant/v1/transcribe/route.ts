@@ -8,7 +8,7 @@ import { buildVocabulary } from "@/lib/assistant/speech/vocabulary";
 import { recordAudit } from "@/lib/audit/record";
 import { requireTenant } from "@/lib/auth/principal";
 import { CLINIC_TZ } from "@/lib/domain/timezone";
-import { InMemoryRateLimiter } from "@/lib/security/rate-limit";
+import { checkRateLimit } from "@/lib/security/durable-rate-limit";
 
 /**
  * POST /api/assistant/v1/transcribe — speech to text, with the clinic's names.
@@ -29,7 +29,8 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 /** Audio is expensive to process, so it is capped harder than a text turn. */
-const transcribeLimiter = new InMemoryRateLimiter(30, 60_000);
+const STT_LIMIT = 30;
+const STT_WINDOW_SECONDS = 60;
 
 /** Roughly a minute of compressed speech. Longer is a different feature. */
 const MAX_AUDIO_BYTES = 8 * 1024 * 1024;
@@ -46,7 +47,11 @@ export async function POST(request: Request) {
   try {
     const principal = requireTenant(await requestPrincipal(request));
 
-    const decision = transcribeLimiter.check(`stt:${principal.authUserId}`);
+    const decision = await checkRateLimit(
+      `stt:${principal.authUserId}`,
+      STT_LIMIT,
+      STT_WINDOW_SECONDS,
+    );
     if (!decision.allowed) {
       return NextResponse.json(
         { error: "rate_limited", message: "Too many recordings. Wait a moment." },
