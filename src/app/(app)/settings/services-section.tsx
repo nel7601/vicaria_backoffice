@@ -8,6 +8,7 @@ import { formatCents } from "@/lib/domain/money";
 import {
   createServiceAction,
   deleteServiceAction,
+  setServiceArchivedAction,
   updateServiceAction,
 } from "./actions";
 
@@ -98,6 +99,15 @@ export function ServicesSection({
 
   function set<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((f) => ({ ...f, [key]: value }));
+  }
+
+  function setArchived(s: ServiceRow, archive: boolean) {
+    setError(null);
+    startTransition(async () => {
+      const res = await setServiceArchivedAction(s.id, archive);
+      if (res.ok) router.refresh();
+      else setError(res.error ?? "Could not update service.");
+    });
   }
 
   function remove(s: ServiceRow) {
@@ -211,6 +221,13 @@ export function ServicesSection({
                     <div className="flex justify-end gap-1.5">
                       <button onClick={() => openEdit(s)} className={editBtnClass}>
                         Edit
+                      </button>
+                      <button
+                        onClick={() => setArchived(s, s.isActive)}
+                        disabled={pending}
+                        className={editBtnClass}
+                      >
+                        {s.isActive ? "Archive" : "Unarchive"}
                       </button>
                       <button
                         onClick={() => remove(s)}

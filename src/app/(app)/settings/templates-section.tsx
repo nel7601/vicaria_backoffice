@@ -9,6 +9,7 @@ import {
   createTemplateAction,
   deleteTemplateAction,
   publishTemplateVersionAction,
+  setTemplateArchivedAction,
 } from "./actions";
 import { deleteBtnClass, editBtnClass } from "./services-section";
 
@@ -20,6 +21,7 @@ export interface TemplateRow {
   version: number | null;
   fields: TemplateFieldInput[];
   usageCount: number;
+  archived: boolean;
 }
 
 const FIELD_TYPES = [
@@ -147,6 +149,15 @@ export function TemplatesSection({
     });
   }
 
+  function setArchived(t: TemplateRow, archived: boolean) {
+    setError(null);
+    startTransition(async () => {
+      const res = await setTemplateArchivedAction(t.templateId, archived);
+      if (res.ok) router.refresh();
+      else setError(res.error ?? "Could not update template.");
+    });
+  }
+
   function remove(t: TemplateRow) {
     if (
       !window.confirm(
@@ -175,7 +186,10 @@ export function TemplatesSection({
           <li className="p-3 text-sm text-muted">No templates yet.</li>
         )}
         {templates.map((t) => (
-          <li key={t.templateId} className="flex items-center justify-between p-3 text-sm">
+          <li
+            key={t.templateId}
+            className={`flex items-center justify-between p-3 text-sm ${t.archived ? "opacity-60" : ""}`}
+          >
             <div>
               <div className="font-medium">
                 {t.name}{" "}
@@ -183,6 +197,11 @@ export function TemplatesSection({
                   v{t.version ?? "—"} · {t.fields.length} field
                   {t.fields.length === 1 ? "" : "s"}
                 </span>
+                {t.archived && (
+                  <span className="ml-1.5 rounded-full bg-border px-2 py-0.5 text-xs text-muted">
+                    archived
+                  </span>
+                )}
               </div>
               <div className="text-xs text-muted">
                 {t.serviceName ? `Linked to ${t.serviceName}` : "Not linked to a service"}
@@ -191,8 +210,17 @@ export function TemplatesSection({
             </div>
             {canEdit && (
               <span className="flex gap-1.5">
-                <button onClick={() => openEdit(t)} className={editBtnClass}>
-                  Edit
+                {!t.archived && (
+                  <button onClick={() => openEdit(t)} className={editBtnClass}>
+                    Edit
+                  </button>
+                )}
+                <button
+                  onClick={() => setArchived(t, !t.archived)}
+                  disabled={pending}
+                  className={editBtnClass}
+                >
+                  {t.archived ? "Unarchive" : "Archive"}
                 </button>
                 <button
                   onClick={() => remove(t)}

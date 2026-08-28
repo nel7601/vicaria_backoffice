@@ -122,7 +122,7 @@ export default async function ClinicalRecordPage({
   });
 
   const formOptions: FormOption[] = templates
-    .filter((t) => t.versionId)
+    .filter((t) => t.versionId && !t.archivedAt)
     .map((t) => ({
       templateId: t.templateId,
       versionId: t.versionId!,

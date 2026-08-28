@@ -84,6 +84,7 @@ export default async function SettingsPage() {
         version: t.version,
         fields: extractFields(t.schema),
         usageCount: t.usageCount ?? 0,
+        archived: Boolean(t.archivedAt),
       }));
     }
   } catch (e) {
@@ -126,7 +127,7 @@ export default async function SettingsPage() {
         <div className="mt-4">
           <ServicesSection
             services={services}
-            categories={categories.map((c) => c.name)}
+            categories={categories.filter((c) => c.isActive).map((c) => c.name)}
             canEdit={canEditCompany}
           />
         </div>

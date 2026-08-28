@@ -516,7 +516,131 @@ function isFkViolation(e: unknown): boolean {
 }
 
 const IN_USE_MSG =
-  "It has already been used elsewhere, so it cannot be deleted — archive it instead (set it inactive).";
+  "It has already been used elsewhere, so it cannot be deleted — archive it instead. Archived items leave the selection menus and can be unarchived at any time.";
+
+/**
+ * Archive philosophy (all catalog models): anything already referenced can
+ * never be deleted, but can be archived — it disappears from every selection
+ * menu while keeping history intact, and can be unarchived later.
+ */
+
+/** Archive or unarchive an encounter template. */
+export async function setTemplateArchivedAction(
+  templateId: string,
+  archived: boolean,
+): Promise<ActionResult> {
+  const user = await authorize("configuration", "update");
+  const org = await getPrimaryOrganization();
+  if (!org) return { ok: false, error: "Organization not found." };
+
+  const db = getDb();
+  const [existing] = await db
+    .select({ id: encounterTemplates.id, archivedAt: encounterTemplates.archivedAt })
+    .from(encounterTemplates)
+    .where(
+      and(
+        eq(encounterTemplates.organizationId, org.id),
+        eq(encounterTemplates.id, templateId),
+      ),
+    )
+    .limit(1);
+  if (!existing) return { ok: false, error: "Template not found." };
+
+  await db
+    .update(encounterTemplates)
+    .set({ archivedAt: archived ? new Date() : null, updatedAt: new Date() })
+    .where(eq(encounterTemplates.id, templateId));
+
+  await recordAudit({
+    organizationId: org.id,
+    actorUserId: user.authId,
+    action: archived ? "archive" : "unarchive",
+    entityType: "encounter_template",
+    entityId: templateId,
+    before: { archivedAt: existing.archivedAt },
+  });
+
+  revalidatePath("/settings");
+  revalidatePath("/encounters");
+  return { ok: true };
+}
+
+/** Archive (deactivate) or unarchive a service without editing its details. */
+export async function setServiceArchivedAction(
+  serviceId: string,
+  archived: boolean,
+): Promise<ActionResult> {
+  const user = await authorize("configuration", "update");
+  const org = await getPrimaryOrganization();
+  if (!org) return { ok: false, error: "Organization not found." };
+
+  const db = getDb();
+  const [existing] = await db
+    .select({ id: services.id, isActive: services.isActive })
+    .from(services)
+    .where(and(eq(services.organizationId, org.id), eq(services.id, serviceId)))
+    .limit(1);
+  if (!existing) return { ok: false, error: "Service not found." };
+
+  await db
+    .update(services)
+    .set({ isActive: !archived, updatedAt: new Date() })
+    .where(eq(services.id, serviceId));
+
+  await recordAudit({
+    organizationId: org.id,
+    actorUserId: user.authId,
+    action: archived ? "archive" : "unarchive",
+    entityType: "service",
+    entityId: serviceId,
+    before: { isActive: existing.isActive },
+  });
+
+  revalidatePath("/settings");
+  revalidatePath("/calendar");
+  revalidatePath("/billing");
+  return { ok: true };
+}
+
+/** Archive (deactivate) or unarchive a service category. */
+export async function setCategoryArchivedAction(
+  categoryId: string,
+  archived: boolean,
+): Promise<ActionResult> {
+  const user = await authorize("configuration", "update");
+  const org = await getPrimaryOrganization();
+  if (!org) return { ok: false, error: "Organization not found." };
+
+  const db = getDb();
+  const [existing] = await db
+    .select({ id: serviceCategories.id, isActive: serviceCategories.isActive })
+    .from(serviceCategories)
+    .where(
+      and(
+        eq(serviceCategories.organizationId, org.id),
+        eq(serviceCategories.id, categoryId),
+      ),
+    )
+    .limit(1);
+  if (!existing) return { ok: false, error: "Category not found." };
+
+  await db
+    .update(serviceCategories)
+    .set({ isActive: !archived, updatedAt: new Date() })
+    .where(eq(serviceCategories.id, categoryId));
+
+  await recordAudit({
+    organizationId: org.id,
+    actorUserId: user.authId,
+    action: archived ? "archive" : "unarchive",
+    entityType: "service_category",
+    entityId: categoryId,
+    before: { isActive: existing.isActive },
+  });
+
+  revalidatePath("/settings");
+  return { ok: true };
+}
 
 async function countUsage(
   checks: Promise<{ n: number }[]>[],

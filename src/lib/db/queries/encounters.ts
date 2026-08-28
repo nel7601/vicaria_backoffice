@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import {
   encounterAmendments,
@@ -81,6 +81,7 @@ export async function getEncounter(organizationId: string, id: string) {
   return { encounter, template, amendments, measurements };
 }
 
+/** Selectable (non-archived) template versions for pickers. */
 export async function listTemplates(organizationId: string) {
   const db = getDb();
   return db
@@ -95,7 +96,12 @@ export async function listTemplates(organizationId: string) {
       encounterTemplates,
       eq(encounterTemplates.id, encounterTemplateVersions.templateId),
     )
-    .where(eq(encounterTemplates.organizationId, organizationId));
+    .where(
+      and(
+        eq(encounterTemplates.organizationId, organizationId),
+        isNull(encounterTemplates.archivedAt),
+      ),
+    );
 }
 
 /**
@@ -113,6 +119,7 @@ export async function listTemplatesDetailed(organizationId: string) {
       name: encounterTemplates.name,
       serviceId: encounterTemplates.serviceId,
       serviceName: services.nameEn,
+      archivedAt: encounterTemplates.archivedAt,
       versionId: encounterTemplateVersions.id,
       version: encounterTemplateVersions.version,
       schema: encounterTemplateVersions.schema,
@@ -149,7 +156,7 @@ export async function resolveTemplateVersionForService(
   serviceId: string | null,
 ): Promise<string | null> {
   const detailed = await listTemplatesDetailed(organizationId);
-  const withVersion = detailed.filter((t) => t.versionId);
+  const withVersion = detailed.filter((t) => t.versionId && !t.archivedAt);
   if (serviceId) {
     const match = withVersion.find((t) => t.serviceId === serviceId);
     if (match) return match.versionId;

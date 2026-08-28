@@ -7,6 +7,7 @@ import { inputClass } from "@/components/ui/field";
 import {
   createCategoryAction,
   deleteCategoryAction,
+  setCategoryArchivedAction,
   updateCategoryAction,
 } from "./actions";
 import { deleteBtnClass, editBtnClass } from "./services-section";
@@ -65,6 +66,15 @@ export function CategoriesSection({
     });
   }
 
+  function setArchived(c: CategoryRow, archive: boolean) {
+    setError(null);
+    startTransition(async () => {
+      const res = await setCategoryArchivedAction(c.id, archive);
+      if (res.ok) router.refresh();
+      else setError(res.error ?? "Could not update category.");
+    });
+  }
+
   function remove(c: CategoryRow) {
     if (
       !window.confirm(
@@ -109,6 +119,14 @@ export function CategoriesSection({
                   aria-label={`Edit ${c.name}`}
                 >
                   Edit
+                </button>
+                <button
+                  onClick={() => setArchived(c, c.isActive)}
+                  disabled={pending}
+                  className={editBtnClass}
+                  aria-label={`${c.isActive ? "Archive" : "Unarchive"} ${c.name}`}
+                >
+                  {c.isActive ? "Archive" : "Unarchive"}
                 </button>
                 <button
                   onClick={() => remove(c)}

@@ -30,6 +30,8 @@ export const encounterTemplates = pgTable("encounter_templates", {
     .references(() => organizations.id),
   name: varchar("name", { length: 160 }).notNull(),
   serviceId: uuid("service_id").references(() => services.id),
+  // Archived templates keep history but leave every selection menu.
+  archivedAt: timestamp("archived_at", { withTimezone: true, mode: "date" }),
   ...timestamps,
 });
 
