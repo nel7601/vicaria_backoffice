@@ -11,6 +11,7 @@ import {
 } from "./operations";
 import { getPatientSummaryTool } from "./patient-summary";
 import { resolvePatientTool } from "./patients";
+import { rescheduleAppointmentTool } from "./reschedule";
 import { resolveDateTool } from "./resolve-date-tool";
 import { runReportTool } from "./reports";
 import {
@@ -40,6 +41,7 @@ const ALL_TOOLS: AssistantTool[] = [
   getFollowUpTasksTool as AssistantTool,
   getInvoicesTool as AssistantTool,
   runReportTool as AssistantTool,
+  rescheduleAppointmentTool as AssistantTool,
 ];
 
 /** May this principal use this tool at all? */

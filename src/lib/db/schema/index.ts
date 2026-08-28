@@ -15,3 +15,4 @@ export * from "./documents";
 export * from "./integrations";
 export * from "./audit";
 export * from "./care";
+export * from "./assistant";

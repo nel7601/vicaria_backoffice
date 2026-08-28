@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { and, eq } from "drizzle-orm";
-import { authorize } from "@/lib/auth/authorize";
+import { authorize, requirePrincipal } from "@/lib/auth/authorize";
 import { recordAudit } from "@/lib/audit/record";
 import { getDb } from "@/lib/db";
 import { appointments, appointmentStatusHistory } from "@/lib/db/schema";
@@ -14,12 +14,11 @@ import {
   updateAppointmentSchema,
 } from "@/lib/schemas/appointment";
 import {
-  canTransition,
   findConflicts,
   isValidTimeRange,
-  transitionRequiresReason,
   type AppointmentStatus,
 } from "@/lib/domain/appointment";
+import { changeAppointmentStatus } from "@/lib/domain/appointments/commands";
 
 export interface AppointmentResult {
   ok: boolean;
@@ -117,69 +116,43 @@ export async function changeAppointmentStatusAction(
   appointmentId: string,
   raw: unknown,
 ): Promise<AppointmentResult> {
-  const user = await authorize("patients_demographic", "update");
   const parsed = changeStatusSchema.safeParse(raw);
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
   }
-  const org = await getPrimaryOrganization();
-  if (!org) return { ok: false, error: "Organization not found." };
 
-  const db = getDb();
-  const [current] = await db
-    .select({ status: appointments.status })
-    .from(appointments)
-    .where(
-      and(
-        eq(appointments.organizationId, org.id),
-        eq(appointments.id, appointmentId),
-      ),
-    )
-    .limit(1);
-  if (!current) return { ok: false, error: "Appointment not found." };
+  const ctx = await webCommandContext();
+  if (!ctx) return { ok: false, error: "Organization not found." };
 
-  const from = current.status as AppointmentStatus;
-  const to = parsed.data.status;
-  if (!canTransition(from, to)) {
-    return { ok: false, error: `Cannot change status from ${from} to ${to}.` };
-  }
-  if (transitionRequiresReason(to) && !parsed.data.reason) {
-    return { ok: false, error: `A reason is required to mark ${to}.` };
-  }
-
-  await db.transaction(async (tx) => {
-    await tx
-      .update(appointments)
-      .set({
-        status: to,
-        cancellationReason:
-          to === "cancelled" ? (parsed.data.reason ?? null) : undefined,
-        updatedAt: new Date(),
-      })
-      .where(eq(appointments.id, appointmentId));
-    await tx.insert(appointmentStatusHistory).values({
-      organizationId: org.id,
-      appointmentId,
-      fromStatus: from,
-      toStatus: to,
-      reason: parsed.data.reason ?? null,
-      changedBy: user.dbUserId,
-    });
-  });
-
-  await recordAudit({
-    organizationId: org.id,
-    actorUserId: user.authId,
-    action: "update",
-    entityType: "appointment",
-    entityId: appointmentId,
-    before: { status: from },
-    after: { status: to },
+  // The decision, the history row and the audit entry all live in the shared
+  // command, so the assistant and this page cannot drift apart on what a valid
+  // transition is.
+  const result = await changeAppointmentStatus(ctx, {
+    appointmentId,
+    status: parsed.data.status,
     reason: parsed.data.reason,
   });
 
+  if (!result.ok) return { ok: false, error: result.error };
+
   revalidatePath("/calendar");
   return { ok: true, appointmentId };
+}
+
+/**
+ * Build a command context from the cookie session.
+ *
+ * Falls back to the primary organization when the signed-in user has no
+ * organization linked, which is how this page behaved before commands existed.
+ * Tightening that is a change to the web's own behaviour and belongs with the
+ * employee-provisioning work, not here.
+ */
+async function webCommandContext() {
+  const principal = await requirePrincipal();
+  const organizationId =
+    principal.organizationId ?? (await getPrimaryOrganization())?.id;
+  if (!organizationId) return null;
+  return { principal: { ...principal, organizationId } };
 }
 
 /**

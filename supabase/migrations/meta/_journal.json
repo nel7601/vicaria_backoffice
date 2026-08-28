@@ -92,6 +92,13 @@
       "when": 1785258815099,
       "tag": "0012_patient_search_trgm",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1787934914487,
+      "tag": "0013_assistant_action_proposals",
+      "breakpoints": true
     }
   ]
 }
