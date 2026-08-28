@@ -1,4 +1,4 @@
-import { and, eq, gte, isNull, lt } from "drizzle-orm";
+import { and, desc, eq, gte, isNull, lt } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { appointments, employees, patients } from "@/lib/db/schema";
 import { planRead } from "../policy/scope";
@@ -7,18 +7,28 @@ import type { ToolContext } from "../tools/types";
 /**
  * The names worth telling the recogniser about.
  *
- * Not every patient: the prompt is capped, a longer list dilutes the bias, and
- * sending the whole roster to a transcription service is more exposure for no
- * gain. What people actually say out loud is who is on the schedule around
- * now, so that is what goes.
+ * Two tiers, because a first attempt that only listed the coming week's
+ * schedule failed the plan's own example: asked to move "Cuco Tetilla", the
+ * decoder heard "contigo", because Cuco had no appointment and so was not in
+ * the list. The patient you want to book is by definition the one without a
+ * booking yet.
+ *
+ * So: everyone on the schedule around now first, since those names are the
+ * most likely to be said, then other active patients until the budget is
+ * spent. Still not the whole roster — the prompt is capped, a longer list
+ * dilutes the bias, and sending every name to a transcription service is more
+ * exposure for less accuracy.
  *
  * Scope applies here as everywhere else. A practitioner's vocabulary is built
- * from their own schedule, so the service never receives names they could not
+ * from their own patients, so the service never receives names they could not
  * have seen in the first place.
  */
 
 /** How far either side of today counts as "coming up". */
 const WINDOW_DAYS = 7;
+
+/** Matches the transcription prompt's cap; filling past it is wasted. */
+const VOCABULARY_BUDGET = 60;
 
 export async function buildVocabulary(
   ctx: ToolContext,
@@ -54,11 +64,41 @@ export async function buildVocabulary(
     .where(and(...conditions));
 
   const names = new Set<string>();
-  for (const row of rows) {
-    names.add(`${row.first} ${row.last}`.trim());
+  const add = (first: string, last: string, preferred: string | null) => {
+    names.add(`${first} ${last}`.trim());
     // The nickname matters more than the legal name here: it is what gets
     // said out loud and what the recogniser is least likely to know.
-    if (row.preferred) names.add(`${row.preferred} ${row.last}`.trim());
+    if (preferred) names.add(`${preferred} ${last}`.trim());
+  };
+
+  for (const row of rows) add(row.first, row.last, row.preferred);
+
+  // Fill the remaining budget with other patients on the books. Someone with
+  // no upcoming appointment is exactly who gets named when booking one.
+  if (names.size < VOCABULARY_BUDGET) {
+    const otherConditions = [
+      eq(patients.organizationId, ctx.principal.organizationId),
+      isNull(patients.deletedAt),
+    ];
+    if (plan.mode === "own" && plan.employeeId) {
+      otherConditions.push(eq(patients.primaryPractitionerId, plan.employeeId));
+    }
+
+    const others = await db
+      .select({
+        first: patients.legalFirstName,
+        last: patients.legalLastName,
+        preferred: patients.preferredName,
+      })
+      .from(patients)
+      .where(and(...otherConditions))
+      .orderBy(desc(patients.updatedAt))
+      .limit(VOCABULARY_BUDGET);
+
+    for (const row of others) {
+      if (names.size >= VOCABULARY_BUDGET) break;
+      add(row.first, row.last, row.preferred);
+    }
   }
 
   // Practitioners are named constantly ("with Dr. Suárez") and there are few
@@ -74,3 +114,4 @@ export async function buildVocabulary(
 
 /** Exported for the tests that pin the scoping rules. */
 export const VOCABULARY_WINDOW_DAYS = WINDOW_DAYS;
+export const VOCABULARY_MAX_TERMS = VOCABULARY_BUDGET;

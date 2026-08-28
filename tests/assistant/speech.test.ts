@@ -21,14 +21,24 @@ describe("buildPrompt", () => {
   it("wraps the names in well-formed prose rather than listing them", () => {
     const prompt = buildPrompt(names);
     expect(prompt).toContain("Cuco Tetilla, Priya Sharma");
-    // The correctly written frame is what stops the model copying bad spelling.
-    expect(prompt).toContain("ortografía y puntuación correctas");
+    // The correctly written frame is what stops the model copying bad
+    // spelling. Asserted by property, not by wording, so rephrasing the
+    // instruction does not break the test.
+    expect(prompt).toMatch(/ortografía/);
+    expect(prompt).toMatch(/puntuación/);
     expect(prompt).not.toBe("Cuco Tetilla, Priya Sharma");
   });
 
   it("writes the frame in the language being spoken", () => {
     expect(buildPrompt(names, "en")).toContain("correct spelling and punctuation");
     expect(buildPrompt(names, "en")).not.toContain("ortografía");
+  });
+
+  it("closes with a sample sentence in the target language", () => {
+    // Not decoration: with a long list of non-Spanish names the instruction
+    // alone got diluted and English words leaked into Spanish transcripts.
+    expect(buildPrompt(names, "es")).toContain("¿Cuántos pacientes");
+    expect(buildPrompt(names, "en")).toContain("How many patients");
   });
 
   it("drops duplicates rather than weighting a name twice", () => {
@@ -43,8 +53,11 @@ describe("buildPrompt", () => {
 
   it("caps the list instead of letting the provider truncate it", () => {
     const many = Array.from({ length: 200 }, (_, i) => `Patient Number${i}`);
-    const listed = buildPrompt(many).split("nombres propios: ")[1] ?? "";
-    expect(listed.split(", ").length).toBeLessThanOrEqual(MAX_VOCABULARY_TERMS + 1);
+    const prompt = buildPrompt(many);
+    // Count the names themselves rather than commas: the surrounding prose
+    // has commas of its own.
+    const included = many.filter((name) => prompt.includes(name));
+    expect(included).toHaveLength(MAX_VOCABULARY_TERMS);
   });
 
   it("returns nothing at all for an empty vocabulary", () => {

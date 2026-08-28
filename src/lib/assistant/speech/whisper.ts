@@ -129,9 +129,16 @@ export function buildPrompt(
   if (!unique.length) return "";
   const names = unique.slice(0, MAX_VOCABULARY_TERMS).join(", ");
 
+  // The closing example is doing real work, not decoration. With a long list
+  // of names — many of them not Spanish — the instruction alone gets diluted
+  // and English words leak into Spanish transcripts ("¿Cuántos patients...").
+  // A sample sentence in the target language anchors the style, and it also
+  // fixed "¿Qué pacientes" being heard where "¿Cuántos pacientes" was said.
   return language === "en"
     ? `Vicaria clinic consultation. These proper names may be mentioned: ${names}. ` +
-        `Transcribe in English with correct spelling and punctuation.`
+        `Transcribe in English, verbatim, with correct spelling and punctuation. ` +
+        `Example of the expected style: "How many patients does she have on Friday afternoon?"`
     : `Consulta de la clínica Vicaria. Se mencionan estos nombres propios: ${names}. ` +
-        `Transcribe en español, con ortografía y puntuación correctas.`;
+        `Transcribe en español de forma literal, con ortografía, tildes y puntuación correctas. ` +
+        `Ejemplo del estilo esperado: «¿Cuántos pacientes tiene el viernes por la tarde?»`;
 }
