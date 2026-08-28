@@ -11,6 +11,10 @@ const PUBLIC_PATHS = [
   // per request and must answer 401 JSON, never a 302 to the login page which
   // a mobile client cannot act on.
   "/api/assistant",
+  // Same for the MCP server. A redirect here would reach ChatGPT or Claude as
+  // an HTML page where a protocol handshake was expected, and the connector
+  // would report something unhelpful instead of "you need to sign in".
+  "/api/mcp",
 ];
 
 /**
