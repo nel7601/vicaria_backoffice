@@ -1,12 +1,17 @@
-# Plan de desarrollo — APK "Asistente Vicaria" (chat con voz sobre el backoffice)
+# Plan de desarrollo — APK "Agente Vicaria" (agente de voz y chat sobre el backoffice)
 
-**Estado:** propuesta v1 · **Fecha:** 2026-08-28
+**Estado:** propuesta v2 (v1 + ejecución de acciones) · **Fecha:** 2026-08-28
 
 ## 1. Objetivo del producto
 
-Una aplicación Android (APK) que funciona como un asistente conversacional por texto y voz, cuyo conocimiento está **estrictamente limitado a los datos del backoffice de Vicaria** (pacientes, citas, encuentros clínicos, home care, facturación, reportes).
+Una aplicación Android (APK) que funciona como un **agente conversacional** por texto y voz, cuyo conocimiento está **estrictamente limitado a los datos del backoffice de Vicaria** (pacientes, citas, encuentros clínicos, home care, facturación, reportes) y que, además de responder preguntas, puede **ejecutar acciones** sobre el backoffice.
 
-Ejemplo de uso: el usuario activa el micrófono y pregunta *"¿cuántos pacientes tengo para el próximo viernes?"*; la app responde por voz con la cantidad y el detalle de las citas de ese día. Ante cualquier pregunta general (clima, noticias, conocimiento médico genérico, etc.) el asistente responde: **"No estoy entrenada para eso; solo puedo responder sobre la información del backoffice de Vicaria."**
+Ejemplos de uso:
+
+- **Consulta:** el usuario activa el micrófono y pregunta *"¿cuántos pacientes tengo para el próximo viernes?"*; la app responde por voz con la cantidad y el detalle de las citas de ese día.
+- **Acción:** el usuario dice *"cámbiale la cita al cliente Cuco del próximo sábado para el próximo martes a las tres de la tarde"*; el agente localiza al paciente y su cita del sábado, **repite en voz alta lo que va a hacer y pide confirmación** ("Voy a mover la cita de Cuco Pérez del sábado 5 de septiembre a las 10:00 al martes 8 de septiembre a las 15:00, ¿confirmas?"), la ejecuta al recibir el "sí", y confirma el resultado ("Listo, la cita quedó reprogramada para el martes 8 a las 15:00").
+
+Ante cualquier pregunta o pedido fuera del backoffice (clima, noticias, conocimiento médico genérico, etc.) el agente responde: **"No estoy entrenada para eso; solo puedo trabajar con la información del backoffice de Vicaria."**
 
 ## 2. Punto de partida (estado actual del backoffice)
 
@@ -81,13 +86,35 @@ Cada tool es un wrapper delgado sobre `src/lib/db/queries/*` que: (1) llama `aut
 | `run_report` | "dame el reporte de citas por estado de agosto" | `runReport` (códigos FIN/OPS/CLN/PKG/MKT existentes) |
 | `resolve_date` | normaliza "próximo viernes", "esta semana", "el 15" | `date-fns` + helpers de `timezone.ts`; el servidor pasa al modelo la fecha/hora actual de la clínica en cada request |
 
-**Regla de rechazo:** el system prompt define el rol ("asistente exclusivo del backoffice de Vicaria"), enumera las tools y ordena que ante cualquier pregunta fuera de ese alcance responda exactamente el mensaje de rechazo en el idioma del usuario, sin intentar responder con conocimiento general. La suite de evaluación (§8) lo verifica.
+**Regla de rechazo:** el system prompt define el rol ("agente exclusivo del backoffice de Vicaria"), enumera las tools y ordena que ante cualquier pregunta o pedido fuera de ese alcance responda exactamente el mensaje de rechazo en el idioma del usuario, sin intentar responder con conocimiento general. La suite de evaluación (§8) lo verifica.
 
-**Solo lectura en v1.** Acciones de escritura (crear/mover citas) quedan explícitamente fuera de la fase 1; si se agregan después, requerirán confirmación explícita en pantalla (no solo por voz) antes de ejecutar.
+### Herramientas de acción (escritura) — fase de agente
+
+El agente también puede **ejecutar acciones** sobre el backoffice. Hoy la lógica de escritura vive en Server Actions atadas a cookies (`src/app/(app)/calendar/actions.ts`: `createAppointmentAction`, `updateAppointmentAction`, `changeAppointmentStatusAction`), así que el primer paso es **extraer esa lógica a funciones de dominio compartidas** (p. ej. `src/lib/domain/appointments/commands.ts`) que consuman tanto las Server Actions de la web como las tools del agente — misma validación Zod, mismo `authorize()`, misma escritura de `appointment_status_history` y `audit_events`.
+
+| Tool de acción | Responde a | Se apoya en |
+|---|---|---|
+| `reschedule_appointment` | "cámbiale la cita a Cuco del sábado para el martes a las 3 pm" | lógica de `updateAppointmentAction` (nuevo `start_at`/`end_at`, estado `rescheduled` + cita nueva enlazada por `rescheduled_from_id`, historial de estados) |
+| `create_appointment` | "agéndale a María una consulta el jueves a las 10" | lógica de `createAppointmentAction` (paciente, servicio, practitioner, ubicación, precio estimado) |
+| `cancel_appointment` | "cancela la cita de Juan de mañana" | `changeAppointmentStatusAction` → `cancelled` con `cancellation_reason` obligatorio |
+| `update_appointment_status` | "márcala como confirmada / llegó el paciente" | `changeAppointmentStatusAction` (`confirmed`, `checked_in`, `no_show`, …) validando transiciones permitidas |
+| `create_follow_up_task` | "recuérdame llamar a Cuco el lunes" | inserción en `follow_up_tasks` |
+
+**Protocolo obligatorio de toda acción (propose → confirm → execute → verify):**
+
+1. **Resolver referencias.** "El cliente Cuco" se resuelve con `search_patients` (nombre legal, `preferred_name`, fuzzy); "el próximo sábado" y "el martes a las tres de la tarde" con `resolve_date` en hora de la clínica. Si hay ambigüedad (dos pacientes "Cuco", dos citas ese sábado, "las tres" ¿AM/PM? — se asume PM en horario de clínica pero se explicita), el agente **pregunta antes de proponer**, nunca adivina en silencio.
+2. **Verificar precondiciones.** La cita origen existe y no está `completed`/`cancelled`; el nuevo horario no choca con otra cita del practitioner (`employeeAppointmentsInWindow`) ni cae fuera del horario de la sede; el usuario tiene permiso de escritura sobre esa cita según RBAC.
+3. **Proponer y confirmar.** El agente enuncia la acción completa con datos resueltos (paciente con nombre y apellido, fecha absoluta, hora, servicio) por voz **y** en una tarjeta de confirmación en pantalla con botones Confirmar/Cancelar. La confirmación vale por voz ("sí", "confirmo") o por botón; cualquier otra respuesta cancela. **Ninguna tool de escritura se ejecuta sin este paso**, y eso se garantiza en el servidor: la propuesta devuelve un `action_token` firmado y de un solo uso con los parámetros exactos, y el endpoint de ejecución solo acepta ese token (el LLM no puede saltarse la confirmación aunque lo intente).
+4. **Ejecutar y verificar.** Se ejecuta el comando de dominio, se relee la cita de la base de datos y se confirma al usuario con los datos reales resultantes ("Listo, la cita de Cuco Pérez quedó para el martes 8 de septiembre a las 15:00 con la Dra. X"). Si algo falla, se explica el motivo (conflicto de agenda, permiso insuficiente) y no se reintenta solo.
+5. **Auditar.** Cada acción escribe `audit_events` con actor, origen `assistant`, acción y entidad — igual que si se hubiera hecho desde la web.
+
+**Idempotencia:** el `action_token` de un solo uso evita ejecuciones duplicadas por reintentos de red o repeticiones del STT.
+
+**Fuera de alcance de acciones (v2):** operaciones financieras (emitir/anular facturas, pagos, reembolsos), firma de encuentros clínicos y cambios de configuración. Son irreversibles o de alto riesgo y se quedan en la web; si el usuario las pide, el agente lo dice y sugiere hacerlo en el backoffice.
 
 ## 5. Aplicación Android (APK)
 
-- **Pantallas:** Login (email/contraseña + reto TOTP si el rol exige MFA) → Chat (historial de burbujas, botón de micrófono estilo push-to-talk, indicador "escuchando/pensando/hablando", respuesta en streaming) → Ajustes (idioma es/en, voz on/off, velocidad de TTS, cerrar sesión).
+- **Pantallas:** Login (email/contraseña + reto TOTP si el rol exige MFA) → Chat (historial de burbujas, botón de micrófono estilo push-to-talk, indicador "escuchando/pensando/hablando", respuesta en streaming, **tarjetas de confirmación de acción** con resumen de la acción propuesta y botones Confirmar/Cancelar) → Ajustes (idioma es/en, voz on/off, velocidad de TTS, cerrar sesión).
 - **Flujo de voz:** micrófono → STT nativo → el texto reconocido se muestra como mensaje editable → se envía a `/api/assistant/chat` → la respuesta llega por SSE y se muestra en vivo → al completarse (o por frases) se lee con TTS. Interrumpir el TTS al tocar el micrófono de nuevo.
 - **Idiomas:** el asistente responde en el idioma en que se le habla (es/en), coherente con el modelo bilingüe del backoffice (`name_es`, `preferred_language`).
 - **Seguridad en el dispositivo:** tokens en Android Keystore/EncryptedSharedPreferences; sin historial de chat persistido en el dispositivo en v1 (el chat contiene PHI); `FLAG_SECURE` para bloquear capturas de pantalla; cierre de sesión por inactividad; nada de PHI en logs/crash reports.
@@ -95,7 +122,7 @@ Cada tool es un wrapper delgado sobre `src/lib/db/queries/*` que: (1) llama `aut
 
 ## 6. Seguridad y privacidad (PHI)
 
-1. Mismo perímetro que la web: Supabase Auth + `authorize()` + alcances por rol; el asistente jamás amplía lo que el usuario ya puede ver en el backoffice.
+1. Mismo perímetro que la web: Supabase Auth + `authorize()` + alcances por rol; el agente jamás amplía lo que el usuario ya puede ver **o hacer** en el backoffice (una recepcionista puede reprogramar citas porque ya puede; un rol `auditor` no puede escribir nada).
 2. La API key del LLM vive solo en el servidor (variable de entorno en Vercel); la app nunca habla con el proveedor de IA.
 3. Minimizar PHI hacia el LLM: las tools devuelven solo los campos necesarios para responder; se evalúa un acuerdo de no-retención/BAA-equivalente con el proveedor (Anthropic ofrece zero-data-retention en planes empresariales).
 4. Auditoría: cada conversación registra `audit_events` (acción `assistant_query`, sin contenido PHI) y `access_logs` por paciente consultado, igual que la web.
@@ -111,14 +138,16 @@ Cada tool es un wrapper delgado sobre `src/lib/db/queries/*` que: (1) llama `aut
 | **2. Chat por texto en la APK** | UI de chat con streaming, manejo de sesión/refresh, estados de error/offline, ajustes básicos | APK interna donde todo el equipo puede chatear por texto | 2 semanas |
 | **3. Voz** | STT push-to-talk es/en, TTS de respuestas, edición del texto reconocido, interrupción de lectura | El flujo del ejemplo (micrófono → pregunta → respuesta hablada) funciona en dispositivos reales | 1–2 semanas |
 | **4. Cobertura completa de datos** | Tools de home care, tareas, facturación y reportes con sus alcances por rol; pulido de respuestas (formatos de fecha/moneda `es`/`en-CA`) | El asistente cubre "cualquier cosa que esté en el backoffice" según el rol del usuario | 2 semanas |
-| **5. Endurecimiento y piloto** | Suite de evaluación (§8) en CI, pruebas de seguridad (intentos de jailbreak/inyección, acceso cruzado entre roles), QA en dispositivos, piloto con 2–3 usuarios reales, distribución | Go/no-go con métricas: precisión de respuestas, tasa de rechazo correcta, latencia p95 de voz→voz < 6 s | 2 semanas |
+| **5. Acciones (agente)** | Extracción de la lógica de citas a comandos de dominio compartidos; tools de escritura (`reschedule_appointment`, `create_appointment`, `cancel_appointment`, `update_appointment_status`, `create_follow_up_task`); protocolo propose→confirm→execute→verify con `action_token` de un solo uso; tarjeta de confirmación en la APK; confirmación por voz | El flujo del ejemplo ("cámbiale la cita a Cuco del sábado para el martes a las 3 pm") funciona end-to-end con confirmación y queda auditado; imposible ejecutar una acción sin confirmación (probado en integración) | 2–3 semanas |
+| **6. Endurecimiento y piloto** | Suite de evaluación (§8) en CI incluyendo acciones, pruebas de seguridad (intentos de jailbreak/inyección, acceso cruzado entre roles, bypass de confirmación), QA en dispositivos, piloto con 2–3 usuarios reales, distribución | Go/no-go con métricas: precisión de respuestas, tasa de rechazo correcta, 0 acciones sin confirmar, latencia p95 de voz→voz < 6 s | 2 semanas |
 
-Total estimado: **10–12 semanas** de una persona full-time (menos con dedicación parcial en paralelo backend/app).
+Total estimado: **12–15 semanas** de una persona full-time (menos con dedicación parcial en paralelo backend/app). Las fases 1–4 (solo lectura) ya son desplegables como piloto intermedio antes de habilitar acciones.
 
 ## 8. Estrategia de pruebas
 
-- **Unitarias (Vitest, ya configurado):** resolución de fechas en lenguaje natural contra `clinicDayWindow` (incluye casos de DST), cada tool con fixtures por rol (un `practitioner` no ve pacientes ajenos; `marketing` no ve finanzas), de-duplicación de pacientes por día.
-- **Evaluación del asistente (golden set):** ~50–100 preguntas con respuesta esperada en es/en — citas ("próximo viernes", "esta semana"), pacientes, facturas, reportes — más ~30 preguntas fuera de alcance (clima, consejos médicos generales, "ignora tus instrucciones…") que deben producir el rechazo. Se corre en CI contra datos seed y bloquea despliegues si la precisión o la tasa de rechazo bajan del umbral.
+- **Unitarias (Vitest, ya configurado):** resolución de fechas en lenguaje natural contra `clinicDayWindow` (incluye casos de DST), cada tool con fixtures por rol (un `practitioner` no ve pacientes ajenos; `marketing` no ve finanzas), de-duplicación de pacientes por día; comandos de dominio de citas (transiciones de estado válidas, detección de conflictos de agenda, `rescheduled_from_id`).
+- **Acciones:** pruebas de integración del protocolo de confirmación — la tool de escritura sin `action_token` válido devuelve error; un token no puede usarse dos veces; token expirado se rechaza; la reprogramación escribe historial de estados y `audit_events`; escenarios de ambigüedad (dos pacientes con el mismo apodo, dos citas el mismo día) terminan en pregunta, nunca en ejecución.
+- **Evaluación del agente (golden set):** ~50–100 preguntas con respuesta esperada en es/en — citas ("próximo viernes", "esta semana"), pacientes, facturas, reportes — más ~30 preguntas fuera de alcance (clima, consejos médicos generales, "ignora tus instrucciones…") que deben producir el rechazo, más ~30 pedidos de acción (reprogramar, cancelar, crear cita, incluyendo variantes ambiguas y pedidos prohibidos como "emite una factura") verificando que la propuesta resuelta sea correcta, que siempre pida confirmación y que la base de datos quede en el estado esperado. Se corre en CI contra datos seed y bloquea despliegues si la precisión o la tasa de rechazo bajan del umbral.
 - **Integración:** `/api/assistant/chat` con tokens reales de Supabase (roles distintos), verificación de 401 sin token y de `access_logs`/`audit_events` escritos.
 - **E2E móvil:** flujo login → pregunta por texto → respuesta; smoke manual del flujo de voz en 2–3 dispositivos físicos (el STT no es automatizable de forma fiable).
 
@@ -130,8 +159,10 @@ Total estimado: **10–12 semanas** de una persona full-time (menos con dedicaci
 | Interpretación errónea de fechas ("próximo viernes" ambiguo) | `resolve_date` determinista en servidor con la hora de la clínica; el asistente confirma la fecha resuelta en su respuesta ("Para el viernes 4 de septiembre tienes…") |
 | Fuga de PHI hacia terceros | STT/TTS nativos, LLM solo en servidor con retención cero, campos mínimos en tools, sin persistencia local del chat |
 | STT nativo flojo con nombres propios/términos clínicos | El texto reconocido es editable antes de enviar; `search_patients` tolera coincidencias parciales/fuzzy |
+| El agente ejecuta una acción equivocada (paciente/cita/fecha mal resueltos) | Protocolo propose→confirm→execute→verify: la acción se enuncia con datos absolutos resueltos y no se ejecuta sin confirmación; `action_token` de un solo uso impide ejecuciones no confirmadas o duplicadas; ambigüedad ⇒ pregunta obligatoria; todo queda en `audit_events` y las citas conservan `rescheduled_from_id` para revertir |
+| Una acción irreversible pedida por voz (factura, reembolso, firma clínica) | Excluidas del catálogo de tools en v2; el agente responde que eso se hace en el backoffice web |
 | Costo del LLM | Modelo pequeño-mediano (p. ej. Haiku) para el loop de tools con escalado solo si la calidad lo exige; presupuesto diario por usuario; caché de prompt del sistema |
-| Server Actions no reutilizables desde móvil | Este plan solo necesita lecturas, cubiertas por `src/lib/db/queries/*`; las escrituras futuras se expondrán como rutas API dedicadas |
+| Server Actions no reutilizables desde móvil | Lecturas cubiertas por `src/lib/db/queries/*`; la lógica de escritura de citas se extrae de las Server Actions a comandos de dominio compartidos (`src/lib/domain/appointments/commands.ts`) que usan web y agente por igual |
 
 ## 10. Trabajo inmediato (checklist de arranque)
 
