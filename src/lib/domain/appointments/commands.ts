@@ -125,34 +125,16 @@ export async function rescheduleAppointment(
 
       const employeeId = input.employeeId ?? current.employeeId;
 
-      const overlapping = await tx
-        .select({
-          id: appointments.id,
-          startAt: appointments.startAt,
-          endAt: appointments.endAt,
-          status: appointments.status,
-        })
-        .from(appointments)
-        .where(
-          and(
-            eq(appointments.organizationId, orgId),
-            eq(appointments.employeeId, employeeId),
-            lt(appointments.startAt, input.endAt),
-            gte(appointments.endAt, input.startAt),
-            ne(appointments.id, input.appointmentId),
-          ),
-        );
-
-      const conflicts = findConflicts(
-        { startAt: input.startAt, endAt: input.endAt },
-        overlapping.map((o) => ({
-          id: o.id,
-          startAt: o.startAt,
-          endAt: o.endAt,
-          status: o.status as AppointmentStatus,
-        })),
-      );
-      if (conflicts.length > 0) {
+      if (
+        await conflictsFor(
+          tx,
+          orgId,
+          employeeId,
+          input.startAt,
+          input.endAt,
+          input.appointmentId,
+        )
+      ) {
         return fail(
           "conflict",
           "That time is no longer free for this practitioner.",
@@ -246,6 +228,263 @@ export async function auditReschedule(
     },
     reason: "Appointment rescheduled",
   });
+}
+
+export interface CreateAppointmentInput {
+  patientId: string;
+  employeeId: string;
+  serviceId?: string | null;
+  locationId?: string | null;
+  startAt: Date;
+  endAt: Date;
+  modality: "in_person" | "virtual" | "phone";
+  estimatedPriceCents?: number;
+  notesAdmin?: string | null;
+}
+
+/** Book a new appointment, refusing to double-book the practitioner. */
+export async function createAppointment(
+  ctx: CommandContext,
+  input: CreateAppointmentInput,
+): Promise<CommandResult> {
+  try {
+    authorizePrincipal(ctx.principal, "patients_demographic", "create");
+  } catch {
+    return fail("forbidden", "You are not allowed to book appointments.");
+  }
+
+  if (input.endAt <= input.startAt) {
+    return fail("invalid_input", "The end time must be after the start time.");
+  }
+
+  const db = getDb();
+  const orgId = ctx.principal.organizationId;
+
+  try {
+    const created = await db.transaction(async (tx) => {
+      const clash = await conflictsFor(tx, orgId, input.employeeId, input.startAt, input.endAt);
+      if (clash) return null;
+
+      const [appt] = await tx
+        .insert(appointments)
+        .values({
+          organizationId: orgId,
+          patientId: input.patientId,
+          serviceId: input.serviceId ?? null,
+          employeeId: input.employeeId,
+          locationId: input.locationId ?? null,
+          startAt: input.startAt,
+          endAt: input.endAt,
+          modality: input.modality,
+          estimatedPriceCents: input.estimatedPriceCents ?? 0,
+          notesAdmin: input.notesAdmin ?? null,
+          status: "scheduled",
+        })
+        .returning();
+
+      await tx.insert(appointmentStatusHistory).values({
+        organizationId: orgId,
+        appointmentId: appt.id,
+        fromStatus: null,
+        toStatus: "scheduled",
+        changedBy: ctx.principal.dbUserId,
+      });
+
+      return appt;
+    });
+
+    if (!created) {
+      return fail("conflict", "That practitioner already has an appointment then.");
+    }
+
+    await recordAudit({
+      organizationId: orgId,
+      actorUserId: ctx.principal.dbUserId ?? undefined,
+      action: "create",
+      entityType: "appointment",
+      entityId: created.id,
+      after: {
+        start: created.startAt.toISOString(),
+        end: created.endAt.toISOString(),
+        status: "scheduled",
+      },
+    });
+
+    return { ok: true, appointmentId: created.id };
+  } catch (error) {
+    if (isOverlapViolation(error)) {
+      return fail("conflict", "That practitioner already has an appointment then.");
+    }
+    throw error;
+  }
+}
+
+export interface UpdateAppointmentInput {
+  appointmentId: string;
+  employeeId: string;
+  serviceId?: string | null;
+  startAt: Date;
+  endAt: Date;
+  modality: "in_person" | "virtual" | "phone";
+  notesAdmin?: string | null;
+}
+
+/**
+ * Edit an upcoming appointment in place.
+ *
+ * Distinct from rescheduling on purpose: this is correcting a booking, not
+ * recording that it moved. A correction leaves no successor row, so a time
+ * change made here is invisible to anything that reads `rescheduled_from_id`.
+ * Whether the calendar's "change the time" should become a reschedule is a
+ * product decision (§12 step 3 of the plan), not something to settle by
+ * quietly changing what this does.
+ */
+export async function updateAppointment(
+  ctx: CommandContext,
+  input: UpdateAppointmentInput,
+): Promise<CommandResult> {
+  try {
+    authorizePrincipal(ctx.principal, "patients_demographic", "update");
+  } catch {
+    return fail("forbidden", "You are not allowed to change appointments.");
+  }
+
+  if (input.endAt <= input.startAt) {
+    return fail("invalid_input", "The end time must be after the start time.");
+  }
+
+  const db = getDb();
+  const orgId = ctx.principal.organizationId;
+
+  try {
+    const result = await db.transaction(async (tx) => {
+      const [current] = await tx
+        .select()
+        .from(appointments)
+        .where(
+          and(
+            eq(appointments.id, input.appointmentId),
+            eq(appointments.organizationId, orgId),
+          ),
+        )
+        .limit(1);
+
+      if (!current) return { kind: "not_found" as const };
+      if (!RESCHEDULABLE.includes(current.status)) {
+        return { kind: "immutable" as const, status: current.status };
+      }
+
+      const clash = await conflictsFor(
+        tx,
+        orgId,
+        input.employeeId,
+        input.startAt,
+        input.endAt,
+        input.appointmentId,
+      );
+      if (clash) return { kind: "conflict" as const };
+
+      await tx
+        .update(appointments)
+        .set({
+          employeeId: input.employeeId,
+          serviceId: input.serviceId ?? null,
+          startAt: input.startAt,
+          endAt: input.endAt,
+          modality: input.modality,
+          notesAdmin: input.notesAdmin ?? null,
+          updatedAt: ctx.now ?? new Date(),
+        })
+        .where(eq(appointments.id, input.appointmentId));
+
+      return { kind: "ok" as const, before: current };
+    });
+
+    if (result.kind === "not_found") {
+      return fail("not_found", "That appointment no longer exists.");
+    }
+    if (result.kind === "immutable") {
+      return fail(
+        "invalid_state",
+        `This appointment is ${result.status} and can no longer be edited.`,
+      );
+    }
+    if (result.kind === "conflict") {
+      return fail("conflict", "That practitioner already has an appointment then.");
+    }
+
+    await recordAudit({
+      organizationId: orgId,
+      actorUserId: ctx.principal.dbUserId ?? undefined,
+      action: "update",
+      entityType: "appointment",
+      entityId: input.appointmentId,
+      before: {
+        employeeId: result.before.employeeId,
+        start: result.before.startAt.toISOString(),
+        end: result.before.endAt.toISOString(),
+        serviceId: result.before.serviceId,
+      },
+      after: {
+        employeeId: input.employeeId,
+        start: input.startAt.toISOString(),
+        end: input.endAt.toISOString(),
+        serviceId: input.serviceId ?? null,
+      },
+    });
+
+    return { ok: true, appointmentId: input.appointmentId };
+  } catch (error) {
+    if (isOverlapViolation(error)) {
+      return fail("conflict", "That practitioner already has an appointment then.");
+    }
+    throw error;
+  }
+}
+
+/**
+ * Does this slot clash with the practitioner's existing appointments?
+ *
+ * Always inside the caller's transaction, so the answer is still true when the
+ * write happens a moment later.
+ */
+async function conflictsFor(
+  tx: Parameters<Parameters<ReturnType<typeof getDb>["transaction"]>[0]>[0],
+  organizationId: string,
+  employeeId: string,
+  startAt: Date,
+  endAt: Date,
+  excludeId?: string,
+): Promise<boolean> {
+  const conditions = [
+    eq(appointments.organizationId, organizationId),
+    eq(appointments.employeeId, employeeId),
+    lt(appointments.startAt, endAt),
+    gte(appointments.endAt, startAt),
+  ];
+  if (excludeId) conditions.push(ne(appointments.id, excludeId));
+
+  const overlapping = await tx
+    .select({
+      id: appointments.id,
+      startAt: appointments.startAt,
+      endAt: appointments.endAt,
+      status: appointments.status,
+    })
+    .from(appointments)
+    .where(and(...conditions));
+
+  return (
+    findConflicts(
+      { startAt, endAt },
+      overlapping.map((o) => ({
+        id: o.id,
+        startAt: o.startAt,
+        endAt: o.endAt,
+        status: o.status as AppointmentStatus,
+      })),
+    ).length > 0
+  );
 }
 
 export interface ChangeStatusInput {
