@@ -99,6 +99,13 @@
       "when": 1787934914487,
       "tag": "0013_assistant_action_proposals",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1788021314487,
+      "tag": "0014_client_audit_and_reschedule",
+      "breakpoints": true
     }
   ]
 }
