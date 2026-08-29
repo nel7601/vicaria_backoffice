@@ -1,5 +1,6 @@
 import { principalCan } from "@/lib/auth/authorize-principal";
 import type { Principal } from "@/lib/auth/principal";
+import { buildActionTools } from "./actions";
 import { aggregateTool } from "./aggregate";
 import {
   getEncounterTool,
@@ -27,7 +28,6 @@ import {
 } from "./operations";
 import { getPatientSummaryTool } from "./patient-summary";
 import { resolvePatientTool } from "./patients";
-import { rescheduleAppointmentTool } from "./reschedule";
 import { resolveDateTool } from "./resolve-date-tool";
 import { runReportTool } from "./reports";
 import {
@@ -67,7 +67,8 @@ const ALL_TOOLS: AssistantTool[] = [
   listEncountersTool as AssistantTool,
   getEncounterTool as AssistantTool,
   getPatientChartTool as AssistantTool,
-  rescheduleAppointmentTool as AssistantTool,
+  // Every write in the catalogue, generated so they cannot drift apart.
+  ...buildActionTools(),
 ];
 
 /** May this principal use this tool at all? */

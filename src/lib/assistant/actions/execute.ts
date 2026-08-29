@@ -1,11 +1,11 @@
-import { z } from "zod";
 import { recordAudit } from "@/lib/audit/record";
+import { principalCan } from "@/lib/auth/authorize-principal";
 import type { Principal } from "@/lib/auth/principal";
-import {
-  auditReschedule,
-  rescheduleAppointment,
-} from "@/lib/domain/appointments/commands";
+import { CLINIC_TZ } from "@/lib/domain/timezone";
 import { assistantFlags } from "../flags";
+import { findAction } from "./catalog";
+// Importing the definitions is what registers them.
+import "./definitions";
 import {
   claimProposal,
   hashArguments,
@@ -33,15 +33,14 @@ export type ExecuteOutcome =
 
 export type ExecuteErrorCode = ClaimFailure | "forbidden" | "failed" | "disabled";
 
-/** Arguments a reschedule proposal carries, as the server resolved them. */
-const rescheduleArgs = z.object({
-  appointmentId: z.uuid(),
-  startAt: z.iso.datetime(),
-  endAt: z.iso.datetime(),
-  employeeId: z.uuid().optional(),
-  patientId: z.uuid(),
-});
-
+/**
+ * Carry out a confirmed proposal.
+ *
+ * Order matters and is not negotiable: claim the row first, then re-validate,
+ * then write. Claiming first means a duplicate confirmation loses before it
+ * can do anything; re-validating after means the state checked is the state at
+ * write time, not the state when the proposal was shown.
+ */
 export async function executeProposal(
   principal: Principal & { organizationId: string; dbUserId: string },
   proposalId: string,
@@ -80,16 +79,13 @@ export async function executeProposal(
     };
   }
 
-  if (proposal.toolName !== "reschedule_appointment") {
-    await markProposalFailed(proposal.proposalId, "unknown tool");
-    return {
-      ok: false,
-      code: "failed",
-      reason: "That action is no longer supported.",
-    };
+  const definition = findAction(proposal.toolName);
+  if (!definition) {
+    await markProposalFailed(proposal.proposalId, "unknown action");
+    return { ok: false, code: "failed", reason: "That action is no longer supported." };
   }
 
-  if (!flags.rescheduleEnabled) {
+  if (definition.name === "reschedule_appointment" && !flags.rescheduleEnabled) {
     await markProposalFailed(proposal.proposalId, "reschedule disabled");
     return {
       ok: false,
@@ -98,60 +94,59 @@ export async function executeProposal(
     };
   }
 
-  const parsed = rescheduleArgs.safeParse(proposal.arguments);
-  if (!parsed.success) {
-    await markProposalFailed(proposal.proposalId, "arguments failed validation");
-    return {
-      ok: false,
-      code: "failed",
-      reason: "The stored action was not valid and was not carried out.",
-    };
+  // Permission is checked again here, not only when the proposal was made: a
+  // role can change between proposing and confirming, and the confirmation is
+  // the moment that matters.
+  if (!principalCan(principal, definition.resource, definition.action)) {
+    await markProposalFailed(proposal.proposalId, "permission lost");
+    return { ok: false, code: "forbidden", reason: "You are no longer allowed to do that." };
   }
 
-  const outcome = await rescheduleAppointment(
-    { principal, now },
-    {
-      appointmentId: parsed.data.appointmentId,
-      startAt: new Date(parsed.data.startAt),
-      endAt: new Date(parsed.data.endAt),
-      employeeId: parsed.data.employeeId,
-      reason: "Rescheduled via the assistant",
-    },
-  );
+  const ctx = {
+    principal,
+    now,
+    timeZone: CLINIC_TZ,
+  } as unknown as Parameters<typeof definition.perform>[1];
+
+  let outcome: Awaited<ReturnType<typeof definition.perform>>;
+  try {
+    outcome = await definition.perform(proposal.arguments, ctx);
+  } catch {
+    await markProposalFailed(proposal.proposalId, "unexpected failure");
+    return { ok: false, code: "failed", reason: "The action could not be carried out." };
+  }
 
   if (!outcome.ok) {
     // The proposal is spent either way; recording why keeps the audit honest
     // and stops a failed action looking like one that never happened.
-    await markProposalFailed(proposal.proposalId, outcome.error);
+    await markProposalFailed(proposal.proposalId, outcome.reason);
     await recordAudit({
       organizationId: principal.organizationId,
       actorUserId: principal.dbUserId,
       action: "assistant_action_failed",
       entityType: "assistant_action_proposal",
       entityId: proposal.proposalId,
-      after: { tool: proposal.toolName, code: outcome.code },
-      reason: outcome.error,
+      after: { tool: proposal.toolName },
+      reason: outcome.reason,
     });
-    return { ok: false, code: "failed", reason: outcome.error };
+    return { ok: false, code: "failed", reason: outcome.reason };
   }
 
-  await auditReschedule({ principal, now }, outcome, {
-    source: "assistant",
-    proposalId: proposal.proposalId,
+  await recordAudit({
+    organizationId: principal.organizationId,
+    actorUserId: principal.dbUserId,
+    action: "assistant_action",
+    entityType: "assistant_action_proposal",
+    entityId: proposal.proposalId,
+    after: {
+      tool: proposal.toolName,
+      summary: proposal.summary,
+      result: outcome.result,
+    },
+    reason: "Confirmed through the assistant",
   });
 
-  return {
-    ok: true,
-    result: {
-      appointmentId: outcome.appointmentId,
-      replacedAppointmentId: outcome.originalId,
-      startAt: outcome.startAt.toISOString(),
-      endAt: outcome.endAt.toISOString(),
-      patientId: outcome.patientId,
-      employeeId: outcome.employeeId,
-    },
-    message: "Done. The appointment has been moved.",
-  };
+  return { ok: true, result: outcome.result, message: outcome.message };
 }
 
 function describeFailure(reason: ClaimFailure): string {
