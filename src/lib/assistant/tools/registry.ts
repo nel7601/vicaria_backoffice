@@ -2,6 +2,21 @@ import { principalCan } from "@/lib/auth/authorize-principal";
 import type { Principal } from "@/lib/auth/principal";
 import { aggregateTool } from "./aggregate";
 import {
+  getEncounterTool,
+  getPatientChartTool,
+  listEncountersTool,
+} from "./clinical";
+import {
+  getInvoiceTool,
+  listOverdueInvoicesTool,
+  listPaymentsTool,
+} from "./finance";
+import {
+  getPatientHistoryTool,
+  listPatientsTool,
+  listStaffTool,
+} from "./people";
+import {
   countCompletedAppointmentsTool,
   getAppointmentsForRangeTool,
 } from "./appointments";
@@ -43,6 +58,15 @@ const ALL_TOOLS: AssistantTool[] = [
   getInvoicesTool as AssistantTool,
   runReportTool as AssistantTool,
   aggregateTool as AssistantTool,
+  listPatientsTool as AssistantTool,
+  listStaffTool as AssistantTool,
+  getPatientHistoryTool as AssistantTool,
+  getInvoiceTool as AssistantTool,
+  listPaymentsTool as AssistantTool,
+  listOverdueInvoicesTool as AssistantTool,
+  listEncountersTool as AssistantTool,
+  getEncounterTool as AssistantTool,
+  getPatientChartTool as AssistantTool,
   rescheduleAppointmentTool as AssistantTool,
 ];
 

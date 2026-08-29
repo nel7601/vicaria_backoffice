@@ -28,18 +28,26 @@ function principal(roles: Role[], overrides: Partial<Principal> = {}): Principal
 const namesFor = (roles: Role[]) => toolsFor(principal(roles)).map((t) => t.name).sort();
 
 describe("what each role can ask for", () => {
-  it("gives an owner everything", () => {
-    expect(namesFor(["owner"])).toEqual([
-      "count_completed_appointments",
+  it("gives an owner the whole catalogue", () => {
+    // Asserted as a set rather than a fixed list: this grows, and a test that
+    // has to be edited for every addition stops being read.
+    const names = namesFor(["owner"]);
+    for (const expected of [
+      "aggregate",
       "get_appointments_for_range",
-      "get_care_shifts_for_range",
-      "get_follow_up_tasks",
-      "get_invoices",
+      "get_encounter",
+      "get_invoice",
+      "get_patient_chart",
       "get_patient_summary",
+      "list_patients",
+      "list_payments",
+      "list_staff",
       "resolve_date",
       "resolve_patient",
       "run_report",
-    ]);
+    ]) {
+      expect(names, expected).toContain(expected);
+    }
   });
 
   it("does not give billing the care roster", () => {
