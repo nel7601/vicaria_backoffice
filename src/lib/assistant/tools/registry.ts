@@ -1,5 +1,6 @@
 import { principalCan } from "@/lib/auth/authorize-principal";
 import type { Principal } from "@/lib/auth/principal";
+import { aggregateTool } from "./aggregate";
 import {
   countCompletedAppointmentsTool,
   getAppointmentsForRangeTool,
@@ -41,6 +42,7 @@ const ALL_TOOLS: AssistantTool[] = [
   getFollowUpTasksTool as AssistantTool,
   getInvoicesTool as AssistantTool,
   runReportTool as AssistantTool,
+  aggregateTool as AssistantTool,
   rescheduleAppointmentTool as AssistantTool,
 ];
 
