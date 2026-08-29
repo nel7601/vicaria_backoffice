@@ -26,6 +26,7 @@ function principal(overrides: Partial<Principal> = {}): Principal {
     dbUserId: "00000000-0000-0000-0000-000000000002",
     organizationId: "00000000-0000-0000-0000-000000000003",
     employeeId: null,
+    displayName: "Nelson",
     isPractitioner: false,
     locale: "en",
     source: "assistant",
@@ -68,6 +69,7 @@ describe("web/assistant equivalence", () => {
       source: "assistant",
       organizationId: "99999999-9999-9999-9999-999999999999",
       employeeId: "88888888-8888-8888-8888-888888888888",
+      displayName: "Nelson",
       isPractitioner: true,
     });
     for (const resource of RESOURCES) {

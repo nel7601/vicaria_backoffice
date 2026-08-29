@@ -1,5 +1,6 @@
 import { zodToJsonSchema } from "./schema-json";
 import { OUT_OF_SCOPE_MESSAGE, respondSchema, type TurnOutcome } from "./outcome";
+import { DEFAULT_PROFILE, type Profile } from "./persona";
 import { buildSystemPrompt } from "./system-prompt";
 import {
   ToolInputError,
@@ -54,6 +55,8 @@ export interface RunTurnParams {
    * Server-held: the client never supplies history, only its id.
    */
   history?: AiMessage[];
+  /** How the person likes to be addressed. Never affects permissions. */
+  profile?: Profile;
   limits?: Partial<OrchestratorLimits>;
   now?: () => number;
   /**
@@ -103,7 +106,11 @@ export async function runTurn(params: RunTurnParams): Promise<TurnOutcome> {
     }
 
     const providerRequest = {
-      system: buildSystemPrompt(ctx, available.map((t) => t.name)),
+      system: buildSystemPrompt(
+        ctx,
+        available.map((t) => t.name),
+        params.profile ?? DEFAULT_PROFILE,
+      ),
       messages,
       tools: toolSpecs,
     };

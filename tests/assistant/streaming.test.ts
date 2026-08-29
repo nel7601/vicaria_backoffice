@@ -21,6 +21,7 @@ function context(overrides: Partial<Principal> = {}): ToolContext {
     dbUserId: "user-1",
     organizationId: "org-1",
     employeeId: "emp-1",
+    displayName: "Nelson",
     isPractitioner: false,
     locale: "es",
     source: "assistant",

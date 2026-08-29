@@ -37,6 +37,8 @@ export interface Principal {
   organizationId: string | null;
   /** `employees.id` when this user has a labour profile, else null. */
   employeeId: string | null;
+  /** First name, for addressing the person. Irrelevant to authorization. */
+  displayName: string | null;
   isPractitioner: boolean;
   /** Response language for the assistant; irrelevant to authorization. */
   locale: "en" | "es";
@@ -49,6 +51,7 @@ export interface PrincipalIdentity {
   dbUserId: string | null;
   organizationId: string | null;
   employeeId: string | null;
+  displayName: string | null;
   isPractitioner: boolean;
   isActive: boolean;
 }
@@ -57,6 +60,7 @@ const UNRESOLVED: PrincipalIdentity = {
   dbUserId: null,
   organizationId: null,
   employeeId: null,
+  displayName: null,
   isPractitioner: false,
   isActive: true,
 };
@@ -84,6 +88,7 @@ export async function resolvePrincipalIdentity(
         organizationId: users.organizationId,
         isActive: users.isActive,
         employeeId: employees.id,
+        displayName: employees.firstName,
         isPractitioner: employees.isPractitioner,
       })
       .from(users)
@@ -98,6 +103,7 @@ export async function resolvePrincipalIdentity(
       dbUserId: row.dbUserId,
       organizationId: row.organizationId,
       employeeId: row.employeeId ?? null,
+      displayName: row.displayName ?? null,
       isPractitioner: row.isPractitioner ?? false,
       isActive: row.isActive,
     };

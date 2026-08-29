@@ -1,3 +1,4 @@
+import { buildPersona, DEFAULT_PROFILE, type Profile } from "./persona";
 import { clinicNow } from "./tools/resolve-date";
 import type { ToolContext } from "./tools/types";
 
@@ -43,14 +44,15 @@ function voiceGuidance(channel: ToolContext["channel"]): string[] {
 export function buildSystemPrompt(
   ctx: ToolContext,
   availableTools: string[],
+  profile: Profile = DEFAULT_PROFILE,
 ): string {
   const now = clinicNow(ctx.now, ctx.timeZone);
   const language = ctx.principal.locale === "es" ? "Spanish" : "English";
 
   return [
-    "You are the Vicaria backoffice assistant. You help clinic staff with the",
-    "information held in this backoffice: patients, appointments, clinical",
-    "encounters, home care, billing and reports.",
+    "You help the staff of the Vicaria clinic with the information held in its",
+    "backoffice: patients, appointments, clinical encounters, home care,",
+    "billing and reports.",
     "",
     "Rules that are not negotiable:",
     "",
@@ -84,5 +86,13 @@ export function buildSystemPrompt(
     "",
     `Tools available to you this turn: ${availableTools.join(", ") || "none"}.`,
     "Tools not listed do not exist for this user; do not ask for them.",
+    // Character last, so it colours everything above rather than being
+    // buried under it.
+    ...buildPersona({
+      name: profile.name ?? ctx.principal.displayName ?? undefined,
+      profile,
+      language: ctx.principal.locale,
+      channel: ctx.channel ?? "text",
+    }),
   ].join("\n");
 }

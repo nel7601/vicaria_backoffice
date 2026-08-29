@@ -35,6 +35,7 @@ const UNRESOLVED_IDENTITY: PrincipalIdentity = {
   dbUserId: null,
   organizationId: null,
   employeeId: null,
+  displayName: null,
   isPractitioner: false,
   isActive: true,
 };
@@ -53,6 +54,7 @@ export function principalFromSession(
     dbUserId: identity.dbUserId,
     organizationId: identity.organizationId,
     employeeId: identity.employeeId,
+    displayName: identity.displayName,
     isPractitioner: identity.isPractitioner,
     locale,
     source: "web",

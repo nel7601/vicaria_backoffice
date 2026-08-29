@@ -9,6 +9,7 @@ import {
   openConversation,
 } from "@/lib/assistant/conversation";
 import { runTurn, type TurnEvent } from "@/lib/assistant/orchestrator";
+import { DEFAULT_PROFILE, profileSchema } from "@/lib/assistant/persona";
 import { getProvider } from "@/lib/assistant/provider";
 import { recordAudit } from "@/lib/audit/record";
 import { requireTenant } from "@/lib/auth/principal";
@@ -63,6 +64,11 @@ const bodySchema = z.object({
    * takes seconds; in voice that is silence with nothing to show for it.
    */
   stream: z.boolean().default(false),
+  /**
+   * How this person likes to be addressed. Held by the client because it is
+   * a preference, not a permission — nothing here changes what may be seen.
+   */
+  profile: profileSchema.optional(),
   /** Client-generated, for idempotency and for correlating logs. */
   requestId: z.string().max(100).optional(),
 });
@@ -126,6 +132,7 @@ export async function POST(request: Request) {
         input: parsed.data.input,
         history,
         carried,
+        profile: parsed.data.profile ?? DEFAULT_PROFILE,
         requestId: parsed.data.requestId,
       });
     }
@@ -135,6 +142,7 @@ export async function POST(request: Request) {
       ctx,
       input: parsed.data.input,
       history,
+      profile: parsed.data.profile ?? DEFAULT_PROFILE,
     });
 
     // Reseal so the next turn can refer back to this one. Refusals are carried
@@ -194,6 +202,7 @@ function streamTurn(params: {
   input: string;
   history: Parameters<typeof runTurn>[0]["history"];
   carried?: string;
+  profile: Parameters<typeof runTurn>[0]["profile"];
   requestId?: string;
 }): Response {
   const encoder = new TextEncoder();
@@ -212,6 +221,7 @@ function streamTurn(params: {
           ctx: params.ctx,
           input: params.input,
           history: params.history,
+          profile: params.profile,
           onEvent: (event: TurnEvent) => {
             if (event.type === "delta") send("delta", { text: event.text });
             else if (event.type === "tools_requested") {

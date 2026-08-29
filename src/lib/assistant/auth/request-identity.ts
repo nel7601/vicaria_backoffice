@@ -165,6 +165,7 @@ export async function requestPrincipal(
     dbUserId: identity.dbUserId,
     organizationId: identity.organizationId,
     employeeId: identity.employeeId,
+    displayName: identity.displayName,
     isPractitioner: identity.isPractitioner,
     locale,
     source: "assistant",

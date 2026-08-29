@@ -28,6 +28,7 @@ function principal(roles: Role[], overrides: Partial<Principal> = {}): Principal
     dbUserId: "user-1",
     organizationId: "org-1",
     employeeId: "emp-1",
+    displayName: "Nelson",
     isPractitioner: false,
     locale: "en",
     source: "assistant",
