@@ -6,10 +6,10 @@ import { cancelProposal } from "@/lib/assistant/actions/proposals";
 import { assistantFlags } from "@/lib/assistant/flags";
 import { invokeTool, toolsFor } from "@/lib/assistant/tools/registry";
 import { CLINIC_TZ } from "@/lib/domain/timezone";
-import { yisePrincipal, YiseIdentityError } from "@/lib/yise/identity";
+import { vikiPrincipal, VikiIdentityError } from "@/lib/viki/identity";
 
 /**
- * The clinic as an MCP server for Yise — the same catalogue, no roles.
+ * The clinic as an MCP server for Viki — the same catalogue, no roles.
  *
  * Separate from `/api/mcp` on purpose, and the difference is the whole point:
  * that one resolves a person from their own session and shows them only what
@@ -63,12 +63,12 @@ export const POST = async (request: Request): Promise<Response> => {
   // Trimmed because this value is pasted into a web form at the other end,
   // and a trailing newline there would fail every request with a message
   // saying the token was wrong — which it would be, by one invisible byte.
-  const expected = process.env.YISE_MCP_TOKEN?.trim();
+  const expected = setting("MCP_TOKEN");
   if (!expected) {
     // Missing configuration must close the door, not open it. Without this a
     // deployment that forgot the variable would be a clinic with no lock.
     return Response.json(
-      { error: "not_configured", message: "Yise is not configured here" },
+      { error: "not_configured", message: "Viki is not configured here" },
       { status: 503 },
     );
   }
@@ -81,11 +81,11 @@ export const POST = async (request: Request): Promise<Response> => {
     );
   }
 
-  let principal: Awaited<ReturnType<typeof yisePrincipal>>;
+  let principal: Awaited<ReturnType<typeof vikiPrincipal>>;
   try {
-    principal = await yisePrincipal();
+    principal = await vikiPrincipal();
   } catch (error) {
-    if (error instanceof YiseIdentityError) {
+    if (error instanceof VikiIdentityError) {
       return Response.json(
         { error: "not_configured", message: error.message },
         { status: 503 },
@@ -178,7 +178,7 @@ export const POST = async (request: Request): Promise<Response> => {
       );
     },
     {
-      serverInfo: { name: "vicaria-yise", version: "1.0.0" },
+      serverInfo: { name: "vicaria-viki", version: "1.0.0" },
       instructions:
         "Tools for the Vicaria clinic backoffice: appointments, patients, home care, " +
         "billing and reports. Every statement about the clinic must come from these tools, " +
@@ -193,3 +193,15 @@ export const POST = async (request: Request): Promise<Response> => {
 };
 
 export { POST as GET, POST as DELETE };
+
+/**
+ * Read a setting under its current name, falling back to what it used to be
+ * called.
+ *
+ * The app was called Yise while it was being built. Renaming the variables and
+ * the deployment cannot happen in the same instant, and whichever goes first
+ * would otherwise take the clinic's voice down until the other caught up.
+ */
+function setting(name: string): string | undefined {
+  return (process.env[`VIKI_${name}`] ?? process.env[`YISE_${name}`])?.trim();
+}

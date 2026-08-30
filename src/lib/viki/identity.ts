@@ -4,9 +4,9 @@ import { employees, users } from "@/lib/db/schema";
 import type { Principal } from "@/lib/auth/principal";
 
 /**
- * Who Yise is, as far as the clinic's records are concerned.
+ * Who Viki is, as far as the clinic's records are concerned.
  *
- * Yise has no permission model. That was the point of it: one app, one login,
+ * Viki has no permission model. That was the point of it: one app, one login,
  * everything visible. But "no permissions" cannot mean "no identity" — every
  * query still has to be scoped to an organization, and every write still has
  * to be signed by a row in `users`, or the foreign keys refuse it and the
@@ -17,23 +17,23 @@ import type { Principal } from "@/lib/auth/principal";
  * this account did it. That is the honest cost of dropping roles, and it is
  * worth stating plainly rather than discovering later while reading an audit.
  */
-export class YiseIdentityError extends Error {
+export class VikiIdentityError extends Error {
   constructor(message: string) {
     super(message);
-    this.name = "YiseIdentityError";
+    this.name = "VikiIdentityError";
   }
 }
 
 let cached: (Principal & { organizationId: string; dbUserId: string }) | null = null;
 
-export async function yisePrincipal(): Promise<
+export async function vikiPrincipal(): Promise<
   Principal & { organizationId: string; dbUserId: string }
 > {
   if (cached) return cached;
 
-  const email = process.env.YISE_ACTOR_EMAIL;
+  const email = setting("ACTOR_EMAIL");
   if (!email) {
-    throw new YiseIdentityError("YISE_ACTOR_EMAIL is not set");
+    throw new VikiIdentityError("VIKI_ACTOR_EMAIL is not set");
   }
 
   const [row] = await getDb()
@@ -52,7 +52,7 @@ export async function yisePrincipal(): Promise<
     .limit(1);
 
   if (!row) {
-    throw new YiseIdentityError(`No active user with email ${email}`);
+    throw new VikiIdentityError(`No active user with email ${email}`);
   }
 
   cached = {
@@ -71,4 +71,16 @@ export async function yisePrincipal(): Promise<
     source: "assistant",
   };
   return cached;
+}
+
+/**
+ * Read a setting under its current name, falling back to what it used to be
+ * called.
+ *
+ * The app was called Yise while it was being built. Renaming the variables and
+ * the deployment cannot happen in the same instant, and whichever goes first
+ * would otherwise take the clinic's voice down until the other caught up.
+ */
+function setting(name: string): string | undefined {
+  return (process.env[`VIKI_${name}`] ?? process.env[`YISE_${name}`])?.trim();
 }

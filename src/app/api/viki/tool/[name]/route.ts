@@ -8,10 +8,10 @@ import {
   invokeTool,
 } from "@/lib/assistant/tools/registry";
 import { CLINIC_TZ } from "@/lib/domain/timezone";
-import { yisePrincipal, YiseIdentityError } from "@/lib/yise/identity";
+import { vikiPrincipal, VikiIdentityError } from "@/lib/viki/identity";
 
 /**
- * POST /api/yise/tool/[name] — run one tool, for a voice agent that cannot
+ * POST /api/viki/tool/[name] — run one tool, for a voice agent that cannot
  * speak MCP.
  *
  * The plan the voice platform is on does not include MCP servers, so the same
@@ -45,7 +45,7 @@ export async function POST(
     return Response.json({ error: "assistant_disabled" }, { status: 503 });
   }
 
-  const expected = process.env.YISE_MCP_TOKEN?.trim();
+  const expected = setting("MCP_TOKEN");
   if (!expected) {
     return Response.json({ error: "not_configured" }, { status: 503 });
   }
@@ -59,11 +59,11 @@ export async function POST(
   const { name } = await context.params;
   const args = await request.json().catch(() => ({}));
 
-  let principal: Awaited<ReturnType<typeof yisePrincipal>>;
+  let principal: Awaited<ReturnType<typeof vikiPrincipal>>;
   try {
-    principal = await yisePrincipal();
+    principal = await vikiPrincipal();
   } catch (error) {
-    if (error instanceof YiseIdentityError) {
+    if (error instanceof VikiIdentityError) {
       return Response.json({ error: "not_configured", message: error.message }, { status: 503 });
     }
     throw error;
@@ -81,7 +81,7 @@ export async function POST(
   try {
     // The two that complete a write live here rather than in the catalogue:
     // the catalogue proposes, and confirming was always meant to be a separate
-    // act. In Yise that act is a spoken yes instead of a button.
+    // act. In Viki that act is a spoken yes instead of a button.
     if (name === "confirm_action") {
       if (!flags.writeActionsEnabled) {
         return Response.json({ done: false, reason: "Las escrituras están desactivadas." });
@@ -109,10 +109,22 @@ export async function POST(
     if (error instanceof ToolInputError) {
       return Response.json({ error: "invalid_arguments", issues: error.issues });
     }
-    console.error(`[yise] ${name} falló`, error);
+    console.error(`[viki] ${name} falló`, error);
     return Response.json({
       error: "tool_failed",
       message: "La herramienta no pudo completarse.",
     });
   }
+}
+
+/**
+ * Read a setting under its current name, falling back to what it used to be
+ * called.
+ *
+ * The app was called Yise while it was being built. Renaming the variables and
+ * the deployment cannot happen in the same instant, and whichever goes first
+ * would otherwise take the clinic's voice down until the other caught up.
+ */
+function setting(name: string): string | undefined {
+  return (process.env[`VIKI_${name}`] ?? process.env[`YISE_${name}`])?.trim();
 }

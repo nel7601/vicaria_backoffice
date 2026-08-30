@@ -9,9 +9,9 @@ import { getDb } from "@/lib/db";
 import { users } from "@/lib/db/schema";
 
 /**
- * POST /api/yise/voice-token — permission to start one voice conversation.
+ * POST /api/viki/voice-token — permission to start one voice conversation.
  *
- * This is the door. Yise has no roles and its MCP server answers to a single
+ * This is the door. Viki has no roles and its MCP server answers to a single
  * shared secret, so the only thing standing between a stranger and the clinic
  * is whether they could sign in — and this is where that is checked. The voice
  * platform's key never leaves the server; the phone gets a token good for one
@@ -34,7 +34,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const agentId = process.env.YISE_AGENT_ID;
+  const agentId = setting("AGENT_ID");
   const apiKey = process.env.ELEVENLABS_API_KEY;
   if (!agentId || !apiKey) {
     return Response.json(
@@ -65,7 +65,7 @@ export async function POST(request: Request) {
     if (!response.ok) {
       // Whatever the voice platform is unhappy about is ours to fix, not the
       // user's to read. Say it plainly and log the status for whoever is.
-      console.error(`[yise] token de voz rechazado: ${response.status}`);
+      console.error(`[viki] token de voz rechazado: ${response.status}`);
       return Response.json(
         { error: "voice_unavailable", message: "No pude abrir la voz. Prueba otra vez." },
         { status: 502 },
@@ -90,4 +90,16 @@ export async function POST(request: Request) {
     }
     throw error;
   }
+}
+
+/**
+ * Read a setting under its current name, falling back to what it used to be
+ * called.
+ *
+ * The app was called Yise while it was being built. Renaming the variables and
+ * the deployment cannot happen in the same instant, and whichever goes first
+ * would otherwise take the clinic's voice down until the other caught up.
+ */
+function setting(name: string): string | undefined {
+  return (process.env[`VIKI_${name}`] ?? process.env[`YISE_${name}`])?.trim();
 }
