@@ -15,6 +15,10 @@ const PUBLIC_PATHS = [
   // an HTML page where a protocol handshake was expected, and the connector
   // would report something unhelpful instead of "you need to sign in".
   "/api/mcp",
+  // Yise's two endpoints, for the same reason twice over: one is a bearer
+  // token from the phone, the other a shared secret from the voice platform,
+  // and neither caller can do anything with a redirect to a login page.
+  "/api/yise",
   // The metadata document the 401 challenge points at. Redirecting it to
   // /login would make the challenge a dead end: the client is told it needs
   // authorization and then handed an HTML page instead of where to get it.
