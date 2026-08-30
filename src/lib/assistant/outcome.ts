@@ -55,6 +55,21 @@ export const OUT_OF_SCOPE_MESSAGE: Record<"en" | "es", string> = {
   es: "No estoy entrenada para eso; solo puedo trabajar con la información del backoffice de Vicaria.",
 };
 
+/**
+ * A write waiting for a yes.
+ *
+ * The summary is the sentence the person reads before agreeing, and the hash
+ * is what proves they agreed to *this* — send it back on confirmation and a
+ * proposal whose arguments changed underneath is refused rather than run.
+ */
+export interface PendingProposal {
+  proposalId: string;
+  argumentsHash: string;
+  summary: string;
+  expiresAt: string;
+  irreversible: boolean;
+}
+
 export interface TurnOutcome {
   kind: OutcomeKind;
   message: string;
@@ -65,4 +80,41 @@ export interface TurnOutcome {
   toolsUsed: string[];
   /** True when the server ended the turn itself rather than the model. */
   terminatedByServer?: boolean;
+  /**
+   * Set when the turn ended asking permission to write.
+   *
+   * Without this the client can read the proposal but has no way to confirm
+   * it: the id lives in the model's tool result, which never leaves the
+   * server. Carrying it here is what makes a spoken "yes" actionable.
+   */
+  proposal?: PendingProposal;
+}
+
+/**
+ * Pick a proposal out of a tool result, if that is what it is.
+ *
+ * Deliberately structural rather than by tool name: the propose tools are
+ * generated from the action catalogue, so there is no fixed list to match
+ * against, and a result that carries an id, a hash and a summary is a
+ * proposal whatever it is called.
+ */
+export function readProposal(output: unknown): PendingProposal | undefined {
+  if (!output || typeof output !== "object") return undefined;
+  const o = output as Record<string, unknown>;
+  if (o.proposed !== true) return undefined;
+  if (
+    typeof o.proposalId !== "string" ||
+    typeof o.argumentsHash !== "string" ||
+    typeof o.summary !== "string" ||
+    typeof o.expiresAt !== "string"
+  ) {
+    return undefined;
+  }
+  return {
+    proposalId: o.proposalId,
+    argumentsHash: o.argumentsHash,
+    summary: o.summary,
+    expiresAt: o.expiresAt,
+    irreversible: o.irreversible === true,
+  };
 }

@@ -16,6 +16,13 @@ import {
   createAppointment,
   rescheduleAppointment,
 } from "@/lib/domain/appointments/commands";
+import {
+  formatPatientNumber,
+  normalizeEmail,
+  normalizeName,
+  normalizePhone,
+} from "@/lib/domain/patient";
+import { nextPatientSequence } from "@/lib/db/queries/patients";
 import { zonedInstantUtc } from "@/lib/domain/timezone";
 import { defineAction, type ActionContext } from "./catalog";
 
@@ -557,5 +564,246 @@ export const voidInvoiceAction = defineAction({
     });
 
     return { ok: true, result: { invoiceId: row.id }, message: "Factura anulada." };
+  },
+});
+
+// ---------------------------------------------------------------------------
+// Patient records
+// ---------------------------------------------------------------------------
+
+/** How a patient is shown back before anything is written about them. */
+function contactLine(phone: string | null, email: string | null): string {
+  const parts = [phone, email].filter(Boolean);
+  return parts.length ? parts.join(" · ") : "sin datos de contacto";
+}
+
+export const createPatientAction = defineAction({
+  name: "create_patient",
+  description:
+    "Propose creating a patient record. Needs at least the legal first and last name; " +
+    "phone and email are how the clinic reaches them, so ask for one. Search first with " +
+    "resolve_patient — someone who called before is already here under some spelling.",
+  resource: "patients_demographic",
+  action: "create",
+  input: z.object({
+    legalFirstName: z.string().trim().min(1).max(120),
+    legalLastName: z.string().trim().min(1).max(120),
+    preferredName: z.string().trim().max(120).optional(),
+    phone: z.string().trim().max(40).optional(),
+    email: z.email().max(255).optional(),
+    dateOfBirth: day.optional(),
+    preferredLanguage: z.enum(["en", "es"]).default("en"),
+  }),
+
+  async prepare(args, ctx) {
+    const first = normalizeName(args.legalFirstName);
+    const last = normalizeName(args.legalLastName);
+    if (!first || !last) return { ok: false, reason: "Faltan el nombre y el apellido." };
+
+    const phone = normalizePhone(args.phone);
+    const email = normalizeEmail(args.email);
+    if (args.phone && !phone) {
+      return { ok: false, reason: "Ese teléfono no parece un número válido." };
+    }
+
+    // A duplicate is the ordinary failure here, not a rare one: the same
+    // person calls twice and gets typed in twice. Refusing costs a question;
+    // a second record splits their history in two.
+    const twin = await getDb()
+      .select({ id: patients.id, number: patients.patientNumber })
+      .from(patients)
+      .where(
+        and(
+          eq(patients.organizationId, ctx.principal.organizationId),
+          eq(patients.legalFirstName, first),
+          eq(patients.legalLastName, last),
+        ),
+      )
+      .limit(1);
+    if (twin.length) {
+      return {
+        ok: false,
+        reason:
+          `Ya existe ${first} ${last} (${twin[0].number}). ` +
+          "Confirma con el usuario si es la misma persona antes de crear otra ficha.",
+      };
+    }
+
+    const dob = args.dateOfBirth ? ` · nacido el ${args.dateOfBirth}` : "";
+    return {
+      ok: true,
+      summary:
+        `Crear la ficha de ${first} ${last}${dob} — ${contactLine(phone, email)}` +
+        `, atención en ${args.preferredLanguage === "es" ? "español" : "inglés"}`,
+      arguments: {
+        legalFirstName: first,
+        legalLastName: last,
+        preferredName: normalizeName(args.preferredName),
+        phone,
+        email,
+        dateOfBirth: args.dateOfBirth ?? null,
+        preferredLanguage: args.preferredLanguage,
+      },
+    };
+  },
+
+  async perform(stored, ctx) {
+    const db = getDb();
+    // The sequence is derived from a count, so two records created in the
+    // same second can pick the same number. The unique index catches it;
+    // this retries rather than handing the user a constraint violation.
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const seq = await nextPatientSequence(ctx.principal.organizationId);
+      try {
+        const [row] = await db
+          .insert(patients)
+          .values({
+            organizationId: ctx.principal.organizationId,
+            patientNumber: formatPatientNumber(seq + attempt),
+            legalFirstName: String(stored.legalFirstName),
+            legalLastName: String(stored.legalLastName),
+            preferredName: (stored.preferredName as string | null) ?? null,
+            phoneE164: (stored.phone as string | null) ?? null,
+            email: (stored.email as string | null) ?? null,
+            dateOfBirth: (stored.dateOfBirth as string | null) ?? null,
+            preferredLanguage: stored.preferredLanguage as "en",
+            status: "prospect",
+          })
+          .returning();
+
+        await recordAudit({
+          organizationId: ctx.principal.organizationId,
+          actorUserId: ctx.principal.dbUserId,
+          action: "create",
+          entityType: "patient",
+          entityId: row.id,
+          after: { patientNumber: row.patientNumber, status: row.status },
+        });
+
+        return {
+          ok: true,
+          result: { patientId: row.id, patientNumber: row.patientNumber },
+          message: `Listo, ${row.legalFirstName} ${row.legalLastName} queda con el número ${row.patientNumber}.`,
+        };
+      } catch (error) {
+        const code = (error as { code?: string }).code;
+        if (code !== "23505") throw error;
+      }
+    }
+    return { ok: false, reason: "No se pudo asignar un número de paciente libre." };
+  },
+});
+
+export const updatePatientContactAction = defineAction({
+  name: "update_patient_contact",
+  description:
+    "Propose correcting how the clinic reaches a patient: phone, email or address. " +
+    "Send only the fields that change; anything omitted is left as it is.",
+  resource: "patients_demographic",
+  action: "update",
+  input: z
+    .object({
+      patientId: z.uuid(),
+      phone: z.string().trim().max(40).optional(),
+      email: z.email().max(255).optional(),
+      address: z.string().trim().max(500).optional(),
+    })
+    .refine((v) => v.phone !== undefined || v.email !== undefined || v.address !== undefined, {
+      message: "Send at least one field to change.",
+    }),
+
+  async prepare(args, ctx) {
+    const [current] = await getDb()
+      .select({
+        phone: patients.phoneE164,
+        email: patients.email,
+        address: patients.address,
+      })
+      .from(patients)
+      .where(
+        and(
+          eq(patients.id, args.patientId),
+          eq(patients.organizationId, ctx.principal.organizationId),
+        ),
+      )
+      .limit(1);
+    if (!current) return { ok: false, reason: "Ese paciente no existe." };
+
+    const phone = args.phone === undefined ? undefined : normalizePhone(args.phone);
+    if (args.phone !== undefined && !phone) {
+      return { ok: false, reason: "Ese teléfono no parece un número válido." };
+    }
+    const email = args.email === undefined ? undefined : normalizeEmail(args.email);
+
+    // Each line says what it replaces. "Cambiar el teléfono" tells you
+    // nothing; the old number is how you notice it is the wrong patient.
+    const changes: string[] = [];
+    if (phone !== undefined) {
+      changes.push(`teléfono ${current.phone ?? "(vacío)"} → ${phone}`);
+    }
+    if (email !== undefined) {
+      changes.push(`email ${current.email ?? "(vacío)"} → ${email}`);
+    }
+    if (args.address !== undefined) {
+      changes.push(`dirección ${current.address ?? "(vacía)"} → ${args.address}`);
+    }
+    if (!changes.length) return { ok: false, reason: "No hay nada que cambiar." };
+
+    const who = await describePatient(args.patientId, ctx);
+    return {
+      ok: true,
+      summary: `Actualizar a ${who}: ${changes.join("; ")}`,
+      arguments: {
+        patientId: args.patientId,
+        phone: phone ?? null,
+        email: email ?? null,
+        address: args.address ?? null,
+        // Which fields were actually asked for. Without this a null meaning
+        // "leave alone" is indistinguishable from one meaning "clear it".
+        fields: [
+          ...(phone !== undefined ? ["phone"] : []),
+          ...(email !== undefined ? ["email"] : []),
+          ...(args.address !== undefined ? ["address"] : []),
+        ],
+        before: {
+          phone: current.phone,
+          email: current.email,
+          address: current.address,
+        },
+      },
+    };
+  },
+
+  async perform(stored, ctx) {
+    const fields = (stored.fields as string[]) ?? [];
+    const patch: Record<string, unknown> = {};
+    if (fields.includes("phone")) patch.phoneE164 = stored.phone;
+    if (fields.includes("email")) patch.email = stored.email;
+    if (fields.includes("address")) patch.address = stored.address;
+    if (!Object.keys(patch).length) return { ok: false, reason: "No hay nada que cambiar." };
+
+    const [row] = await getDb()
+      .update(patients)
+      .set(patch)
+      .where(
+        and(
+          eq(patients.id, String(stored.patientId)),
+          eq(patients.organizationId, ctx.principal.organizationId),
+        ),
+      )
+      .returning({ id: patients.id });
+    if (!row) return { ok: false, reason: "Ese paciente ya no existe." };
+
+    await recordAudit({
+      organizationId: ctx.principal.organizationId,
+      actorUserId: ctx.principal.dbUserId,
+      action: "update",
+      entityType: "patient",
+      entityId: row.id,
+      before: stored.before as Record<string, unknown>,
+      after: patch,
+    });
+
+    return { ok: true, result: { patientId: row.id }, message: "Listo, datos actualizados." };
   },
 });

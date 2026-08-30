@@ -177,6 +177,7 @@ export async function POST(request: Request) {
       spoken: outcome.spoken,
       options: outcome.options,
       toolsUsed: outcome.toolsUsed,
+      proposal: outcome.proposal,
       conversation,
     });
   } catch (error) {
@@ -259,6 +260,7 @@ function streamTurn(params: {
           spoken: outcome.spoken,
           options: outcome.options,
           toolsUsed: outcome.toolsUsed,
+          proposal: outcome.proposal,
           conversation,
         });
       } catch {

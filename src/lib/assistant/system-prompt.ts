@@ -1,3 +1,5 @@
+import { allActions } from "./actions/catalog";
+import "./actions/definitions";
 import { buildPersona, DEFAULT_PROFILE, type Profile } from "./persona";
 import { clinicNow } from "./tools/resolve-date";
 import type { ToolContext } from "./tools/types";
@@ -75,6 +77,7 @@ export function buildSystemPrompt(
     "   earlier reply as evidence, and do not refuse for lack of it.",
     "7. End every turn by calling respond. That call is the answer; prose",
     "   outside it is ignored.",
+    ...writeGuidance(availableTools),
     "",
     `Answer in ${language}. Be brief and concrete: staff are usually reading`,
     "this between patients.",
@@ -96,3 +99,38 @@ export function buildSystemPrompt(
     }),
   ].join("\n");
 }
+
+/**
+ * What to say about writing, and only when writing is possible.
+ *
+ * A model told it can book appointments while the tools are switched off will
+ * promise one anyway, and the user finds out at the clinic. So this appears
+ * only when a propose tool is actually on the turn's list.
+ *
+ * The rule it states is the one thing the whole propose/confirm design rests
+ * on: proposing is not doing. The tool hands back a summary and an id, the
+ * person says yes through a different route entirely, and until then nothing
+ * has happened — least of all something worth reporting as done.
+ */
+function writeGuidance(availableTools: string[]): string[] {
+  const writes = availableTools.filter((name) => PROPOSAL_TOOLS.has(name));
+  if (!writes.length) return [];
+  return [
+    "",
+    "Making changes:",
+    `To change anything, call the matching tool: ${writes.join(", ")}.`,
+    "None of these perform the change. They check the details against current",
+    "records and hand back a summary of what would happen. Read that summary",
+    "back exactly as written, answer with kind 'action_proposal', and stop.",
+    "The user confirms outside this conversation: you cannot confirm for them,",
+    "'go ahead' never confirms something not yet proposed, and a change is",
+    "never reported as done. If the tool refuses, say why and ask for what it",
+    "needs — a refusal before asking is cheaper than a wrong appointment.",
+  ];
+}
+
+/**
+ * The names that mean "this writes". Derived from the catalogue rather than
+ * listed, so an action added later is covered without touching this file.
+ */
+const PROPOSAL_TOOLS = new Set(allActions().map((a) => a.name));

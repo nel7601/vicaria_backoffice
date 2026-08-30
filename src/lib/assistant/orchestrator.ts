@@ -1,5 +1,11 @@
 import { zodToJsonSchema } from "./schema-json";
-import { OUT_OF_SCOPE_MESSAGE, respondSchema, type TurnOutcome } from "./outcome";
+import {
+  OUT_OF_SCOPE_MESSAGE,
+  readProposal,
+  respondSchema,
+  type PendingProposal,
+  type TurnOutcome,
+} from "./outcome";
 import { DEFAULT_PROFILE, type Profile } from "./persona";
 import { buildSystemPrompt } from "./system-prompt";
 import {
@@ -98,6 +104,9 @@ export async function runTurn(params: RunTurnParams): Promise<TurnOutcome> {
     { role: "user", content: params.input },
   ];
   const toolsUsed: string[] = [];
+  // The last write the model asked permission for. Kept so the answer can
+  // carry it out to the client, which is the only party allowed to say yes.
+  let pending: PendingProposal | undefined;
   let toolCallBudget = limits.maxToolCalls;
 
   for (let iteration = 0; iteration < limits.maxIterations; iteration++) {
@@ -159,6 +168,10 @@ export async function runTurn(params: RunTurnParams): Promise<TurnOutcome> {
         spoken: parsed.data.spoken,
         options: parsed.data.options,
         toolsUsed,
+        // Only when the model actually stopped to ask. A proposal made and
+        // then talked past is not something the user should be able to
+        // confirm from a card they were never shown.
+        proposal: parsed.data.kind === "action_proposal" ? pending : undefined,
       };
     }
 
@@ -174,6 +187,7 @@ export async function runTurn(params: RunTurnParams): Promise<TurnOutcome> {
       }
       const result = await runOne(call.name, call.arguments, ctx);
       if (result.ok) toolsUsed.push(call.name);
+      pending = readProposal(result.output) ?? pending;
       params.onEvent?.({ type: "tool_done", name: call.name, ok: result.ok });
       messages.push({
         role: "tool",
@@ -199,10 +213,10 @@ async function runOne(
   name: string,
   args: unknown,
   ctx: ToolContext,
-): Promise<{ ok: boolean; content: string }> {
+): Promise<{ ok: boolean; content: string; output?: unknown }> {
   try {
     const output = await invokeTool(name, args, ctx);
-    return { ok: true, content: JSON.stringify(output) };
+    return { ok: true, content: JSON.stringify(output), output };
   } catch (error) {
     if (error instanceof ToolNotAvailableError) {
       return {
