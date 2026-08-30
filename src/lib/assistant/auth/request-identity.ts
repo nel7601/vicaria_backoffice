@@ -1,6 +1,10 @@
 import { createClient, isAuthRetryableFetchError } from "@supabase/supabase-js";
 import { mfaSatisfied, requiresMfa, type AssuranceLevel } from "@/lib/auth/mfa";
-import { resolvePrincipalIdentity, type Principal } from "@/lib/auth/principal";
+import {
+  IdentityLookupError,
+  resolvePrincipalIdentity,
+  type Principal,
+} from "@/lib/auth/principal";
 import { ROLES, type Role } from "@/lib/auth/rbac";
 
 /**
@@ -139,7 +143,21 @@ export async function requestPrincipal(
   locale: Principal["locale"] = "en",
 ): Promise<Principal> {
   const claims = await verifyAccessToken(bearerToken(request));
-  const identity = await resolvePrincipalIdentity(claims.authUserId);
+  let identity;
+  try {
+    identity = await resolvePrincipalIdentity(claims.authUserId);
+  } catch (error) {
+    if (error instanceof IdentityLookupError) {
+      // 503, not 403: the session is probably fine and the next attempt will
+      // likely work. Telling the user their account is misconfigured would
+      // send them looking for a problem that is not theirs.
+      throw new AssistantAuthError(
+        "auth_unavailable",
+        "Could not verify the session; try again",
+      );
+    }
+    throw error;
+  }
 
   if (!identity.dbUserId || !identity.organizationId) {
     throw new AssistantAuthError(

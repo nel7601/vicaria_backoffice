@@ -107,8 +107,21 @@ export async function resolvePrincipalIdentity(
       isPractitioner: row.isPractitioner ?? false,
       isActive: row.isActive,
     };
-  } catch {
-    return UNRESOLVED;
+  } catch (error) {
+    // A failed lookup is not an unlinked account. Swallowing it here made a
+    // database hiccup arrive at the user as "this account is not linked to an
+    // organization" — a sentence about their account, sent when the truth was
+    // that the query did not run. Say which, so the caller can retry the one
+    // and refuse the other.
+    throw new IdentityLookupError(error);
+  }
+}
+
+/** The identity query itself failed. Says nothing about the account. */
+export class IdentityLookupError extends Error {
+  constructor(readonly reason: unknown) {
+    super("Could not look up the account's identity");
+    this.name = "IdentityLookupError";
   }
 }
 

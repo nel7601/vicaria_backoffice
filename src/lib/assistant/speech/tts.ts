@@ -31,15 +31,53 @@ export type Voice = (typeof VOICES)[number];
  * the same voice reading a clinic's schedule should sound calm and clear, not
  * bright and salesy.
  */
-const DELIVERY =
-  "Habla con calidez y naturalidad, como una secretaria profesional que conoce " +
-  "a la persona. Ritmo tranquilo, sin prisa y sin entusiasmo impostado. " +
-  "Pronuncia los nombres propios con claridad.";
+/**
+ * How Viki sounds.
+ *
+ * Written as direction to a person, not settings for a machine, because that
+ * is what this model takes. The specifics matter more than the adjectives:
+ * "warm and natural" produces the same announcer as no instruction at all,
+ * while "let the last word of a sentence drop" changes the reading audibly.
+ *
+ * What makes synthesis sound synthetic is evenness — every word the same
+ * length, every sentence the same shape, no breath anywhere. So most of this
+ * asks for unevenness.
+ */
+const DELIVERY = [
+  "Eres Viki, la secretaria de una clínica, hablando con un compañero al que",
+  "ves todos los días. No estás leyendo un texto: se lo estás contando.",
+  "",
+  "Ritmo: normal de conversación, ni lento ni apresurado. Deja que las",
+  "palabras se junten como en el habla real, sin vocalizar de más y sin marcar",
+  "cada sílaba. Haz una pausa breve de verdad en las comas, y una un poco más",
+  "larga en los puntos — no sigas de largo.",
+  "",
+  "Entonación: baja el tono al final de cada frase afirmativa, no lo subas.",
+  "Varía la altura entre frases; si todas empiezan igual suena a locutor.",
+  "Antes de decir una cifra o un nombre propio, un instante de pausa, como",
+  "quien lo comprueba antes de decirlo.",
+  "",
+  "Tono: cercano y tranquilo, con una sonrisa muy leve. Nada de entusiasmo",
+  "comercial, nada de energía impostada, nada de alegría de anuncio.",
+  "",
+  "Español neutro de América. Toma aire donde lo tomaría una persona.",
+].join(" ");
 
-const DELIVERY_EN =
-  "Speak warmly and naturally, like a professional assistant who knows the " +
-  "person. Calm pace, unhurried, without forced enthusiasm. Pronounce proper " +
-  "names clearly.";
+const DELIVERY_EN = [
+  "You are Viki, a clinic secretary talking to a colleague you see every day.",
+  "You are not reading text aloud: you are telling them.",
+  "",
+  "Pace: ordinary conversation, neither slow nor hurried. Let words run",
+  "together the way they do in speech, without over-articulating. Take a real",
+  "short pause at commas and a slightly longer one at full stops.",
+  "",
+  "Intonation: let statements fall at the end, never rise. Vary the pitch you",
+  "start sentences on; identical openings are what announcers do. Pause for an",
+  "instant before a figure or a proper name, like someone checking it.",
+  "",
+  "Tone: close and calm, with the faintest smile. No commercial brightness, no",
+  "performed energy. Breathe where a person would.",
+].join(" ");
 
 export interface SpeakRequest {
   text: string;
