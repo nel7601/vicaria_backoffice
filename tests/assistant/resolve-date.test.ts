@@ -5,6 +5,7 @@ import {
   DateResolutionError,
   resolveDate,
 } from "@/lib/assistant/tools/resolve-date";
+import { resolveDateTool } from "@/lib/assistant/tools/resolve-date-tool";
 import { zonedInstantUtc } from "@/lib/domain/timezone";
 
 /**
@@ -184,5 +185,50 @@ describe("clinicNow", () => {
       month: "2026-08",
       timeZone: "America/Toronto",
     });
+  });
+});
+
+/**
+ * The weekday has to come from the tool, not from the model.
+ *
+ * A voice agent told a caller that 16 November 2026 was a Thursday — it is a
+ * Monday — because nothing in the answer could tell it otherwise and it did
+ * the arithmetic itself. Forbidding that in a prompt does not work when the
+ * alternative is having no answer at all.
+ */
+describe("the weekday of a resolved range", () => {
+  const ctx = {
+    principal: { locale: "es" } as never,
+    now: zonedInstantUtc("2026-08-30", 12),
+    timeZone: "America/Toronto",
+  } as never;
+
+  it("names the weekday of a single day", async () => {
+    const out = (await resolveDateTool.execute(
+      { range: { kind: "date", date: "2026-11-16" } } as never,
+      ctx,
+    )) as { startDay: string; startWeekday: string; endWeekday?: string };
+    expect(out.startDay).toBe("2026-11-16");
+    expect(out.startWeekday).toBe("monday");
+    // One day is one weekday; repeating it would invite reading both aloud.
+    expect(out.endWeekday).toBeUndefined();
+  });
+
+  it("names both ends of a range that spans days", async () => {
+    const out = (await resolveDateTool.execute(
+      { range: { kind: "week", offsetWeeks: 0 } } as never,
+      ctx,
+    )) as { startWeekday: string; endWeekday?: string };
+    expect(out.startWeekday).toBe("sunday");
+    expect(out.endWeekday).toBe("saturday");
+  });
+
+  it("is not knocked off by a timezone offset", async () => {
+    // Read at midnight the answer would be the previous day west of UTC.
+    const out = (await resolveDateTool.execute(
+      { range: { kind: "date", date: "2026-01-01" } } as never,
+      ctx,
+    )) as { startWeekday: string };
+    expect(out.startWeekday).toBe("thursday");
   });
 });

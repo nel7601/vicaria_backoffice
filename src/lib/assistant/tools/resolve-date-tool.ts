@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { clinicNow, dateSpecSchema, resolveDate } from "./resolve-date";
+import { WEEKDAYS, clinicNow, dateSpecSchema, resolveDate } from "./resolve-date";
 
 /**
  * The spec is wrapped in an object rather than passed bare.
@@ -50,7 +50,30 @@ function describeRange(
     endDay: range.endDay,
     label: range.label,
     timeZone: range.timeZone,
+    /**
+     * Which day of the week the range starts on, and ends on when it spans
+     * more than one.
+     *
+     * Added because a model asked "what day is the sixteenth?" will answer it
+     * from its own arithmetic if nothing here can, and it will be wrong often
+     * enough to matter — a voice agent told a caller that 16 November 2026 was
+     * a Thursday when it is a Monday. Telling it not to compute dates is not
+     * enough when the alternative is having no answer at all.
+     */
+    startWeekday: weekdayOf(range.startDay),
+    endWeekday: range.startDay === range.endDay ? undefined : weekdayOf(range.endDay),
     /** Current clinic date, so the model never has to guess "today". */
     resolvedFrom: clinicNow(ctx.now, ctx.timeZone),
   };
+}
+
+/**
+ * The weekday of a YYYY-MM-DD day, read at noon UTC.
+ *
+ * Noon rather than midnight so no timezone offset can push the instant into
+ * the day before or after — the classic way this kind of function is off by
+ * one for half the world.
+ */
+function weekdayOf(day: string): string {
+  return WEEKDAYS[new Date(`${day}T12:00:00Z`).getUTCDay()];
 }
