@@ -60,7 +60,10 @@ export const POST = async (request: Request): Promise<Response> => {
     );
   }
 
-  const expected = process.env.YISE_MCP_TOKEN;
+  // Trimmed because this value is pasted into a web form at the other end,
+  // and a trailing newline there would fail every request with a message
+  // saying the token was wrong — which it would be, by one invisible byte.
+  const expected = process.env.YISE_MCP_TOKEN?.trim();
   if (!expected) {
     // Missing configuration must close the door, not open it. Without this a
     // deployment that forgot the variable would be a clinic with no lock.
