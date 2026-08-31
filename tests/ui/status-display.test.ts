@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   APPOINTMENT_LEGEND,
   COVERED_STATUSES,
+  STATUS_FILTERS,
   appointmentStatusStyle,
+  statusesForFilter,
 } from "@/app/(app)/calendar/status-display";
 import type { AppointmentStatus } from "@/lib/domain/appointment";
 
@@ -68,6 +70,27 @@ describe("appointment status display", () => {
     const labels = APPOINTMENT_LEGEND.map((i) => i.label);
     expect(labels).toContain("Awaiting patient confirmation");
     expect(labels).toContain("Confirmed by patient");
+  });
+
+  it("offers a filter for every group the legend explains", () => {
+    expect(STATUS_FILTERS.map((f) => f.label)).toEqual(
+      APPOINTMENT_LEGEND.map((i) => i.label),
+    );
+  });
+
+  it("resolves the awaiting filter to the appointments that need a call", () => {
+    expect(statusesForFilter("awaiting")).toEqual(["scheduled"]);
+  });
+
+  it("treats a missing or unknown filter as no filter, not as empty results", () => {
+    // Returning [] here is what the page reads as "show everything"; an
+    // unknown key must not silently hide every appointment.
+    expect(statusesForFilter(undefined)).toEqual([]);
+    expect(statusesForFilter("nonsense")).toEqual([]);
+  });
+
+  it("marks confirmed appointments in green, the one state needing nothing", () => {
+    expect(appointmentStatusStyle("confirmed").dotClass).toContain("success");
   });
 
   it("falls back to a neutral style for an unknown status", () => {

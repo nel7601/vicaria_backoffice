@@ -15,6 +15,8 @@ import type { LegendItem } from "@/components/ui/status-legend";
  * them in step: the legend is derived from the same groups the grid reads.
  */
 interface StatusGroup {
+  /** Stable key used by the calendar's status filter in the URL. */
+  key: string;
   label: string;
   dotClass: string;
   /** Struck through: this appointment is not going to happen as booked. */
@@ -36,37 +38,44 @@ const GROUPS: readonly StatusGroup[] = [
    * these two hues easily.
    */
   {
+    key: "awaiting",
     label: "Awaiting patient confirmation",
     dotClass: "border-2 border-primary",
     struck: false,
     statuses: ["scheduled"],
   },
   {
+    key: "confirmed",
     label: "Confirmed by patient",
-    dotClass: "text-primary",
+    // Green: the one state that needs nothing from anybody.
+    dotClass: "text-success",
     struck: false,
     badge: "✓",
     statuses: ["confirmed"],
   },
   {
+    key: "in_progress",
     label: "Checked in / In progress",
     dotClass: "bg-warning",
     struck: false,
     statuses: ["checked_in", "in_progress"],
   },
   {
+    key: "completed",
     label: "Completed",
     dotClass: "bg-success",
     struck: false,
     statuses: ["completed"],
   },
   {
+    key: "cancelled",
     label: "Cancelled / No-show",
     dotClass: "bg-danger",
     struck: true,
     statuses: ["cancelled", "no_show"],
   },
   {
+    key: "rescheduled",
     label: "Rescheduled",
     dotClass: "bg-muted",
     struck: true,
@@ -102,3 +111,20 @@ export const APPOINTMENT_LEGEND: LegendItem[] = GROUPS.map((g) => ({
 
 /** Every status the groups cover — used by the test that keeps them complete. */
 export const COVERED_STATUSES = [...BY_STATUS.keys()];
+
+/**
+ * The options offered by the calendar's status filter.
+ *
+ * Same groups, same wording as the legend: someone filtering for the people
+ * they have to call should be picking the row they just read.
+ */
+export const STATUS_FILTERS = GROUPS.map((g) => ({
+  key: g.key,
+  label: g.label,
+}));
+
+/** The statuses a filter key selects; empty/unknown means "no filter". */
+export function statusesForFilter(key: string | undefined): readonly string[] {
+  if (!key) return [];
+  return GROUPS.find((g) => g.key === key)?.statuses ?? [];
+}

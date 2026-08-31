@@ -14,6 +14,7 @@ import {
   appointmentStatusStyle,
 } from "./status-display";
 import { firstFreeSlot } from "@/lib/domain/availability";
+import { STATUS_FILTERS, statusesForFilter } from "./status-display";
 import { NewAppointmentForm } from "./new-appointment-form";
 import { AppointmentRow } from "./appointment-row";
 import { dbErrorHint, withDbRetry } from "@/lib/db/retry";
@@ -38,9 +39,14 @@ function monthLabel(monthStr: string): string {
 export default async function CalendarPage({
   searchParams,
 }: {
-  searchParams: Promise<{ date?: string; month?: string; employee?: string }>;
+  searchParams: Promise<{
+    date?: string;
+    month?: string;
+    employee?: string;
+    status?: string;
+  }>;
 }) {
-  const { date, month, employee } = await searchParams;
+  const { date, month, employee, status } = await searchParams;
   const user = await getSessionUser();
   const roles = user?.roles ?? [];
 
@@ -66,7 +72,9 @@ export default async function CalendarPage({
     : clinicGridWindow(monthStr);
 
   const canCreate = can(roles, "patients_demographic", "create");
-  const empQuery = employee ? `&employee=${employee}` : "";
+  // Paging months or opening a day keeps whatever the user filtered by.
+  const filterQuery =
+    (employee ? `&employee=${employee}` : "") + (status ? `&status=${status}` : "");
 
   let appts: Awaited<ReturnType<typeof listAppointments>> = [];
   let employees: { id: string; label: string }[] = [];
@@ -105,6 +113,18 @@ export default async function CalendarPage({
     : appts.filter((a) => clinicDateString(a.startAt).startsWith(monthStr));
   const unconfirmed = inScope.filter((a) => a.status === "scheduled").length;
 
+  /*
+   * The filter narrows what is shown, and nothing else. The count above and
+   * the free-slot suggestion below deliberately read the unfiltered list: a
+   * count that changed with the filter would answer a question nobody asked,
+   * and a "first free hour" that ignored confirmed appointments would offer
+   * times that are already taken.
+   */
+  const selected = statusesForFilter(status);
+  const visible = selected.length
+    ? appts.filter((a) => selected.includes(a.status))
+    : appts;
+
   // Booking from a day should not ask what day it is.
   const suggestedStart = isDayView
     ? `${dayStr}T${firstFreeSlot({ dayStr, busy: appts })}`
@@ -126,12 +146,19 @@ export default async function CalendarPage({
         {/* The count answers the question the month view is opened for:
             who still has to be called before the day arrives. */}
         {!dbError && unconfirmed > 0 && (
-          <span className="rounded-full border-2 border-primary/40 px-3 py-1 text-sm text-primary-hover">
+          // Clicking it filters to exactly those appointments: the count and
+          // the list of people to call should not be two separate errands.
+          <Link
+            href={`/calendar?${isDayView ? `date=${dayStr}` : `month=${monthStr}`}${
+              employee ? `&employee=${employee}` : ""
+            }&status=awaiting`}
+            className="rounded-full border-2 border-primary/40 px-3 py-1 text-sm text-primary-hover transition hover:bg-primary-soft"
+          >
             {unconfirmed} awaiting confirmation
             <span className="text-muted">
               {isDayView ? " today" : " this month"}
             </span>
-          </span>
+          </Link>
         )}
       </div>
 
@@ -142,25 +169,25 @@ export default async function CalendarPage({
             {isDayView ? (
               <>
                 <Link
-                  href={`/calendar?month=${dayStr.slice(0, 7)}${empQuery}`}
+                  href={`/calendar?month=${dayStr.slice(0, 7)}${filterQuery}`}
                   className="rounded-md border border-border px-3 py-1.5 text-sm text-primary hover:bg-background"
                 >
                   ⊞ Month
                 </Link>
                 <Link
-                  href={`/calendar?date=${shiftDay(dayStr, -1)}${empQuery}`}
+                  href={`/calendar?date=${shiftDay(dayStr, -1)}${filterQuery}`}
                   className="rounded-md border border-border px-3 py-1.5 text-sm hover:bg-background"
                 >
                   ← Prev
                 </Link>
                 <Link
-                  href={`/calendar?date=${shiftDay(dayStr, 1)}${empQuery}`}
+                  href={`/calendar?date=${shiftDay(dayStr, 1)}${filterQuery}`}
                   className="rounded-md border border-border px-3 py-1.5 text-sm hover:bg-background"
                 >
                   Next →
                 </Link>
                 <Link
-                  href={`/calendar?date=${clinicDateString(new Date())}${empQuery}`}
+                  href={`/calendar?date=${clinicDateString(new Date())}${filterQuery}`}
                   className="rounded-md border border-border px-3 py-1.5 text-sm text-primary hover:bg-background"
                 >
                   Today
@@ -169,19 +196,19 @@ export default async function CalendarPage({
             ) : (
               <>
                 <Link
-                  href={`/calendar?month=${shiftMonth(monthStr, -1)}${empQuery}`}
+                  href={`/calendar?month=${shiftMonth(monthStr, -1)}${filterQuery}`}
                   className="rounded-md border border-border px-3 py-1.5 text-sm hover:bg-background"
                 >
                   ← {monthLabel(shiftMonth(monthStr, -1))}
                 </Link>
                 <Link
-                  href={`/calendar?month=${shiftMonth(monthStr, 1)}${empQuery}`}
+                  href={`/calendar?month=${shiftMonth(monthStr, 1)}${filterQuery}`}
                   className="rounded-md border border-border px-3 py-1.5 text-sm hover:bg-background"
                 >
                   {monthLabel(shiftMonth(monthStr, 1))} →
                 </Link>
                 <Link
-                  href={`/calendar${employee ? `?employee=${employee}` : ""}`}
+                  href={`/calendar${filterQuery ? `?${filterQuery.slice(1)}` : ""}`}
                   className="rounded-md border border-border px-3 py-1.5 text-sm text-primary hover:bg-background"
                 >
                   Today
@@ -207,6 +234,18 @@ export default async function CalendarPage({
                 </option>
               ))}
             </select>
+            <select
+              name="status"
+              defaultValue={status ?? ""}
+              className="rounded-md border border-border bg-surface px-3 py-1.5 text-sm"
+            >
+              <option value="">All statuses</option>
+              {STATUS_FILTERS.map((f) => (
+                <option key={f.key} value={f.key}>
+                  {f.label}
+                </option>
+              ))}
+            </select>
             <button
               type="submit"
               className="rounded-md border border-border px-3 py-1.5 text-sm hover:bg-background"
@@ -225,8 +264,8 @@ export default async function CalendarPage({
             <MonthGrid
             monthStr={monthStr}
             todayStr={clinicDateString(new Date())}
-            dayHref={(day) => `/calendar?date=${day}${empQuery}`}
-            entries={appts.map((a) => ({
+            dayHref={(day) => `/calendar?date=${day}${filterQuery}`}
+            entries={visible.map((a) => ({
               id: a.id,
               day: clinicDateString(a.startAt),
               time: a.startAt.toLocaleTimeString("en-CA", {
@@ -246,12 +285,14 @@ export default async function CalendarPage({
         {!dbError && isDayView && (
           <>
           <ul className="divide-y divide-border">
-            {appts.length === 0 && (
+            {visible.length === 0 && (
               <li className="py-6 text-center text-sm text-muted">
-                No appointments for this day.
+                {selected.length
+                  ? "No appointments match this filter on this day."
+                  : "No appointments for this day."}
               </li>
             )}
-            {appts.map((a) => (
+            {visible.map((a) => (
               <AppointmentRow
                 key={a.id}
                 id={a.id}
