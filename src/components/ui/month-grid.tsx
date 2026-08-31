@@ -15,6 +15,12 @@ export interface MonthGridEntry {
   dotClass: string;
   /** Render struck-through/dimmed (cancelled, no-show). */
   struck?: boolean;
+  /**
+   * A glyph shown in place of the dot — a tick for a confirmed appointment.
+   * Shape carries the meaning here, so it survives being printed, being
+   * looked at quickly, and not distinguishing colours well.
+   */
+  badge?: string;
 }
 
 /**
@@ -92,9 +98,18 @@ export function MonthGrid({
                         e.struck ? "line-through opacity-50" : ""
                       }`}
                     >
-                      <span
-                        className={`h-1.5 w-1.5 shrink-0 rounded-full ${e.dotClass}`}
-                      />
+                      {e.badge ? (
+                        <span
+                          aria-hidden
+                          className={`w-2 shrink-0 text-center text-[10px] font-bold leading-none ${e.dotClass}`}
+                        >
+                          {e.badge}
+                        </span>
+                      ) : (
+                        <span
+                          className={`h-2 w-2 shrink-0 rounded-full ${e.dotClass}`}
+                        />
+                      )}
                       <span className="tabular-nums">{e.time}</span>
                       <span className="truncate">{e.label}</span>
                     </div>

@@ -54,6 +54,22 @@ describe("appointment status display", () => {
     }
   });
 
+  it("tells a confirmed appointment apart from one still awaiting the patient", () => {
+    const awaiting = appointmentStatusStyle("scheduled");
+    const confirmed = appointmentStatusStyle("confirmed");
+    // They must not merely differ in hue: the month view is scanned quickly,
+    // and "who still needs calling" is the question it answers.
+    expect(confirmed.badge).toBe("✓");
+    expect(awaiting.badge).toBeUndefined();
+    expect(awaiting.dotClass).not.toBe(confirmed.dotClass);
+  });
+
+  it("labels the two states in the legend by what they mean, not by status name", () => {
+    const labels = APPOINTMENT_LEGEND.map((i) => i.label);
+    expect(labels).toContain("Awaiting patient confirmation");
+    expect(labels).toContain("Confirmed by patient");
+  });
+
   it("falls back to a neutral style for an unknown status", () => {
     expect(appointmentStatusStyle("something_new")).toEqual({
       dotClass: "bg-muted",

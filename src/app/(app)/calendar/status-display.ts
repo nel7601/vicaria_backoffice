@@ -19,15 +19,34 @@ interface StatusGroup {
   dotClass: string;
   /** Struck through: this appointment is not going to happen as booked. */
   struck: boolean;
+  /** Glyph shown instead of the dot; see the confirmed/awaiting pair below. */
+  badge?: string;
   statuses: readonly AppointmentStatus[];
 }
 
 const GROUPS: readonly StatusGroup[] = [
+  /*
+   * Booked and confirmed are the distinction the month view exists to show:
+   * one of them is a list of people to call before the day arrives. They used
+   * to share a dot, which hid exactly that.
+   *
+   * The difference is carried by shape, not colour — a hollow ring for a
+   * booking still waiting on the patient, a tick once they confirm. Shape
+   * survives a glance, a print-out, and a practitioner who does not separate
+   * these two hues easily.
+   */
   {
-    label: "Scheduled / Confirmed",
-    dotClass: "bg-primary",
+    label: "Awaiting patient confirmation",
+    dotClass: "border-2 border-primary",
     struck: false,
-    statuses: ["scheduled", "confirmed"],
+    statuses: ["scheduled"],
+  },
+  {
+    label: "Confirmed by patient",
+    dotClass: "text-primary",
+    struck: false,
+    badge: "✓",
+    statuses: ["confirmed"],
   },
   {
     label: "Checked in / In progress",
@@ -63,11 +82,13 @@ const BY_STATUS = new Map<string, StatusGroup>(
 export function appointmentStatusStyle(status: string): {
   dotClass: string;
   struck: boolean;
+  badge?: string;
 } {
   const group = BY_STATUS.get(status);
   return {
     dotClass: group?.dotClass ?? "bg-muted",
     struck: group?.struck ?? false,
+    badge: group?.badge,
   };
 }
 
@@ -76,6 +97,7 @@ export const APPOINTMENT_LEGEND: LegendItem[] = GROUPS.map((g) => ({
   dotClass: g.dotClass,
   label: g.label,
   struck: g.struck,
+  badge: g.badge,
 }));
 
 /** Every status the groups cover — used by the test that keeps them complete. */

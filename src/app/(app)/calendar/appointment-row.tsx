@@ -25,7 +25,7 @@ const ALL_STATUSES: AppointmentStatus[] = [
 
 const STATUS_STYLE: Record<string, string> = {
   scheduled: "bg-border text-foreground",
-  confirmed: "bg-primary/10 text-primary",
+  confirmed: "bg-primary/10 font-medium text-primary",
   checked_in: "bg-primary/10 text-primary",
   in_progress: "bg-warning/10 text-warning",
   completed: "bg-success/10 text-success",
@@ -131,7 +131,9 @@ export function AppointmentRow(props: {
         <span
           className={`rounded-full px-2 py-0.5 text-xs ${STATUS_STYLE[props.status] ?? ""}`}
         >
-          {props.status}
+          {/* Same tick the month grid uses, so confirmation reads the same
+              way in both views. */}
+          {props.status === "confirmed" ? `✓ ${props.status}` : props.status}
         </span>
         {props.canUpdate && nextOptions.length > 0 && (
           <select
