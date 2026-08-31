@@ -9,6 +9,10 @@ import {
 } from "@/lib/db/queries/appointments";
 import { MonthGrid } from "@/components/ui/month-grid";
 import { StatusLegend } from "@/components/ui/status-legend";
+import {
+  APPOINTMENT_LEGEND,
+  appointmentStatusStyle,
+} from "./status-display";
 import { NewAppointmentForm } from "./new-appointment-form";
 import { AppointmentRow } from "./appointment-row";
 import { dbErrorHint, withDbRetry } from "@/lib/db/retry";
@@ -20,16 +24,6 @@ import {
   shiftMonth,
 } from "@/lib/domain/timezone";
 
-const STATUS_DOT: Record<string, string> = {
-  scheduled: "bg-primary",
-  confirmed: "bg-primary",
-  checked_in: "bg-warning",
-  in_progress: "bg-warning",
-  completed: "bg-success",
-  cancelled: "bg-danger",
-  no_show: "bg-danger",
-  rescheduled: "bg-muted",
-};
 
 function monthLabel(monthStr: string): string {
   const [y, m] = monthStr.split("-").map(Number);
@@ -203,15 +197,7 @@ export default async function CalendarPage({
         {/* Month grid */}
         {!dbError && !isDayView && (
           <>
-            <StatusLegend
-              items={[
-                { dotClass: "bg-primary", label: "Scheduled / Confirmed" },
-                { dotClass: "bg-warning", label: "Checked in / In progress" },
-                { dotClass: "bg-success", label: "Completed" },
-                { dotClass: "bg-danger", label: "Cancelled / No-show", struck: true },
-                { dotClass: "bg-muted", label: "Rescheduled", struck: true },
-              ]}
-            />
+            <StatusLegend items={APPOINTMENT_LEGEND} />
             <MonthGrid
             monthStr={monthStr}
             todayStr={clinicDateString(new Date())}
@@ -226,8 +212,7 @@ export default async function CalendarPage({
                 timeZone: "America/Toronto",
               }),
               label: `${a.patientFirst} ${a.patientLast}`,
-              dotClass: STATUS_DOT[a.status] ?? "bg-muted",
-              struck: ["cancelled", "no_show"].includes(a.status),
+              ...appointmentStatusStyle(a.status),
             }))}
             />
           </>
