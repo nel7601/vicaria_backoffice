@@ -15,6 +15,16 @@ import { EmployeesSection, type EmployeeRow } from "./employees-section";
 import { ServicesSection, type ServiceRow } from "./services-section";
 import { CategoriesSection, type CategoryRow } from "./categories-section";
 import { TemplatesSection, type TemplateRow } from "./templates-section";
+import {
+  CalendarSyncSection,
+  type CalendarFeedRow,
+  type FeedDetail,
+} from "./calendar-sync-section";
+import {
+  getCalendarFeedDetail,
+  listPractitionerFeeds,
+} from "@/lib/db/queries/calendar-feed";
+import { siteOrigin } from "@/lib/site-url";
 
 function extractFields(schema: unknown): TemplateFieldInput[] {
   if (Array.isArray(schema)) return schema as TemplateFieldInput[];
@@ -55,6 +65,8 @@ export default async function SettingsPage() {
   let services: ServiceRow[] = [];
   let categories: CategoryRow[] = [];
   let templates: TemplateRow[] = [];
+  let calendarFeeds: CalendarFeedRow[] = [];
+  let feedDetail: FeedDetail = "initials";
 
   try {
     const org = await getPrimaryOrganization();
@@ -76,6 +88,14 @@ export default async function SettingsPage() {
       employees = (await listEmployees(org.id)) as EmployeeRow[];
       services = (await listServicesWithPrice(org.id)) as ServiceRow[];
       categories = (await listServiceCategories(org.id)) as CategoryRow[];
+      const origin = await siteOrigin();
+      feedDetail = (await getCalendarFeedDetail(org.id)) as FeedDetail;
+      calendarFeeds = (await listPractitionerFeeds(org.id)).map((f) => ({
+        employeeId: f.employeeId,
+        name: `${f.firstName} ${f.lastName}`.trim(),
+        url: f.token ? `${origin}/api/calendar/${f.token}.ics` : null,
+        lastUsedAt: f.lastUsedAt ? f.lastUsedAt.toISOString() : null,
+      }));
       templates = (await listTemplatesDetailed(org.id)).map((t) => ({
         templateId: t.templateId,
         name: t.name,
@@ -141,6 +161,17 @@ export default async function SettingsPage() {
             services={services
               .filter((s) => s.isActive)
               .map((s) => ({ id: s.id, label: s.nameEn }))}
+            canEdit={canEditCompany}
+          />
+        </div>
+      </Card>
+
+      <Card>
+        <CardTitle>Calendar sync</CardTitle>
+        <div className="mt-4">
+          <CalendarSyncSection
+            rows={calendarFeeds}
+            detail={feedDetail}
             canEdit={canEditCompany}
           />
         </div>

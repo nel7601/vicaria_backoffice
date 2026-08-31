@@ -210,3 +210,16 @@ export const careIncidentSeverityEnum = pgEnum("care_incident_severity", [
   "high",
   "critical",
 ]);
+
+/**
+ * How much a personal-calendar feed may say about the patient (§ calendar
+ * sync). These events leave our servers, so the choice is deliberate:
+ *   minimal   "Consultation — 30 min"
+ *   initials  "Consultation — A.R."   (default)
+ *   full      "Consultation — Ana Ruiz"
+ */
+export const calendarFeedDetailEnum = pgEnum("calendar_feed_detail", [
+  "minimal",
+  "initials",
+  "full",
+]);

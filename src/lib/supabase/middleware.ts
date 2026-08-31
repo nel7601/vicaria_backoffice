@@ -6,6 +6,9 @@ const PUBLIC_PATHS = [
   "/auth",
   "/api/webhooks",
   "/forgot-password",
+  // Personal calendar feeds: the secret URL is the credential, and the
+  // subscriber is a calendar client that cannot sign in or follow a redirect.
+  "/api/calendar",
   "/reset-password",
   // Bearer-authenticated API for the assistant APK: it authenticates itself
   // per request and must answer 401 JSON, never a 302 to the login page which

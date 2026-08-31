@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
-import { headers } from "next/headers";
 import { getDb } from "@/lib/db";
+import { siteOrigin } from "@/lib/site-url";
 import { users } from "@/lib/db/schema";
 import type { Role } from "./rbac";
 
@@ -36,25 +36,6 @@ export type ProvisionOutcome =
  */
 async function invitationRedirect(): Promise<string> {
   return `${await siteOrigin()}/auth/confirm?next=/reset-password`;
-}
-
-/**
- * The origin to build email links from. Prefers the configured site URL, then
- * the deployment's own production domain, and only then the origin of the
- * request being served — which is right for local development and wrong for a
- * preview deployment sending a real invitation.
- */
-async function siteOrigin(): Promise<string> {
-  const configured = process.env.NEXT_PUBLIC_SITE_URL;
-  if (configured) return configured.replace(/\/$/, "");
-
-  const vercel = process.env.VERCEL_PROJECT_PRODUCTION_URL;
-  if (vercel) return `https://${vercel.replace(/\/$/, "")}`;
-
-  const h = await headers();
-  const host = h.get("x-forwarded-host") ?? h.get("host");
-  const proto = h.get("x-forwarded-proto") ?? "http";
-  return host ? `${proto}://${host}` : "";
 }
 
 /** Look up an existing auth account by email, paging through the admin list. */

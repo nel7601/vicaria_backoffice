@@ -9,6 +9,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { pgTable } from "drizzle-orm/pg-core";
 import { primaryId, timestamps } from "./_shared";
+import { calendarFeedDetailEnum } from "./enums";
 
 /**
  * organizations — tenant boundary (§8.2, §9.3).
@@ -44,6 +45,14 @@ export const companySettings = pgTable("company_settings", {
   taxConfig: jsonb("tax_config").notNull().default({}),
   legalFooterEn: text("legal_footer_en"),
   legalFooterEs: text("legal_footer_es"),
+  /**
+   * How much a personal-calendar event may say about the patient. These events
+   * are stored by Google/Apple/Zoho, outside our control, so the default keeps
+   * the name out of them and links back here for the rest.
+   */
+  calendarFeedDetail: calendarFeedDetailEnum("calendar_feed_detail")
+    .notNull()
+    .default("initials"),
   ...timestamps,
 });
 

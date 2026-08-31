@@ -62,6 +62,26 @@ was already opened, or that is older than the project's expiry, cannot be
 redeemed twice — re-invite from Settings → Employees rather than resending the
 old email.
 
+## Personal calendar feeds
+
+Each practitioner subscribes to `/api/calendar/<token>.ics`, issued from
+Settings → Calendar sync. Notes for whoever operates this:
+
+- **The URL is the credential.** A calendar client cannot sign in, so the token
+  authorises the request on its own. Issuing a new link revokes the old one;
+  revoked tokens are kept, not deleted, so a leaked link stays dead and
+  traceable. `last fetched` on the card shows whether anyone actually uses it.
+- **`calendar_feed_detail`** (same card) decides how much an event may say:
+  service only, service and initials (default), or the patient's full name.
+  These events are stored by Google/Apple/Zoho outside the clinic, so raising
+  it is audited like a permission change. Every level links back to the
+  appointment here for the rest.
+- **Refresh is the subscriber's decision, not ours.** The feed asks for 15
+  minutes; Apple honours something close to it, Google can take hours. Do not
+  promise same-day accuracy on a Google calendar.
+- Changing the public origin changes every issued link, since the URL embeds
+  it. Re-issue them after a domain move.
+
 ## Anything else keyed to the public origin
 
 Changing the domain means revisiting these too:

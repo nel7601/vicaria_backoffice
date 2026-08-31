@@ -16,3 +16,4 @@ export * from "./integrations";
 export * from "./audit";
 export * from "./care";
 export * from "./assistant";
+export * from "./calendar";
