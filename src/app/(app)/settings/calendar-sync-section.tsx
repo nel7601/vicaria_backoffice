@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { inputClass } from "@/components/ui/field";
 import {
@@ -54,6 +54,7 @@ export function CalendarSyncSection({
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
+  const linkFields = useRef<Record<string, HTMLInputElement | null>>({});
 
   function issue(employeeId: string, replacing: boolean) {
     if (
@@ -95,14 +96,25 @@ export function CalendarSyncSection({
     });
   }
 
-  async function copy(url: string, employeeId: string) {
-    try {
-      await navigator.clipboard.writeText(url);
-      setCopied(employeeId);
-      setTimeout(() => setCopied(null), 2000);
-    } catch {
-      setError("Could not copy — select the link and copy it manually.");
-    }
+  /*
+   * Select the link rather than writing it to the clipboard.
+   *
+   * `navigator.clipboard.writeText` is the mechanism ClickFix attacks use to
+   * plant a command for the victim to paste, so uBlock Origin warns about any
+   * page that calls it — ours included, over a link. A security warning on a
+   * clinical system is worse than a keystroke: staff cannot tell a false alarm
+   * from a real one, and the right response to "this looks like an attack" is
+   * not to learn to ignore it.
+   *
+   * Selecting the text leaves the copying to the browser, where it belongs.
+   */
+  function selectLink(employeeId: string) {
+    const field = linkFields.current[employeeId];
+    if (!field) return;
+    field.focus();
+    field.select();
+    setCopied(employeeId);
+    setTimeout(() => setCopied(null), 4000);
   }
 
   return (
@@ -222,16 +234,24 @@ export function CalendarSyncSection({
               <div className="mt-2 flex flex-wrap items-center gap-2">
                 <input
                   readOnly
+                  ref={(el) => {
+                    linkFields.current[row.employeeId] = el;
+                  }}
                   value={row.url}
                   onFocus={(e) => e.currentTarget.select()}
                   className={`${inputClass} flex-1 font-mono text-xs`}
                 />
                 <button
-                  onClick={() => copy(row.url!, row.employeeId)}
+                  onClick={() => selectLink(row.employeeId)}
                   className={editBtnClass}
                 >
-                  {copied === row.employeeId ? "Copied" : "Copy"}
+                  Select
                 </button>
+                {copied === row.employeeId && (
+                  <span className="text-xs text-muted">
+                    now press Ctrl+C (⌘C on a Mac)
+                  </span>
+                )}
               </div>
             )}
           </li>
