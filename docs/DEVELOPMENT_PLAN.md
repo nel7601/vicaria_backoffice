@@ -130,8 +130,9 @@ the product reference. Status of its deltas:
 - §14 Reports: caregiver hours/exceptions, package balances, certification
   expiry (needs team certifications, §4.1).
 - §10.4 Rounding rules and payroll export of approved hours.
-- Personal calendar sync — **clinic side shipped** (`/api/calendar/<token>.ics`,
-  Settings → Calendar sync). Remaining: the same feed for Vicaria Care
-  caregivers' shifts, and `.ics` email invitations for patients once
-  transactional email exists. A change-notification email would also cover the
-  gap left by Google refreshing subscriptions only every few hours.
+- Personal calendar sync — **shipped for both service lines**
+  (`/api/calendar/<token>.ics`, Settings → Calendar sync): one subscription per
+  employee carrying clinic appointments, home-care shifts, or both. Remaining:
+  `.ics` email invitations for patients once transactional email exists, and a
+  change-notification email to cover the gap left by Google refreshing
+  subscriptions only every few hours.

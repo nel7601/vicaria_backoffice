@@ -15,6 +15,8 @@ export type FeedDetail = "minimal" | "initials" | "full";
 export interface CalendarFeedRow {
   employeeId: string;
   name: string;
+  /** What this person's feed publishes: appointments, shifts, or both. */
+  carries: string;
   /** Full subscription URL, or null when this employee has no live link. */
   url: string | null;
   lastUsedAt: string | null;
@@ -106,8 +108,9 @@ export function CalendarSyncSection({
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted">
-        Each practitioner gets a private link they add once to Google, Apple,
-        Outlook or Zoho Calendar; their schedule then keeps itself up to date.
+        Practitioners and caregivers get a private link they add once to
+        Google, Apple, Outlook or Zoho Calendar; their schedule — clinic
+        appointments, home-care shifts, or both — then keeps itself up to date.
         The link is read-only — nobody can book from their phone — and it is the
         credential, so treat it like a password and replace it if it is shared
         by mistake. Calendars refresh on their own schedule: Apple within
@@ -180,8 +183,8 @@ export function CalendarSyncSection({
       <ul className="divide-y divide-border rounded-md border border-border">
         {rows.length === 0 && (
           <li className="p-3 text-sm text-muted">
-            No practitioners yet. Mark an employee as “sees patients” to give
-            them a calendar.
+            Nobody has a schedule yet. Mark an employee as “sees patients” or
+            “caregiver” to give them a calendar.
           </li>
         )}
         {rows.map((row) => (
@@ -190,6 +193,7 @@ export function CalendarSyncSection({
               <div>
                 <div className="font-medium">{row.name}</div>
                 <div className="text-xs text-muted">
+                  {row.carries} ·{" "}
                   {row.url ? fmtUsed(row.lastUsedAt) : "no link issued"}
                 </div>
               </div>

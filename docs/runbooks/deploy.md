@@ -64,8 +64,10 @@ old email.
 
 ## Personal calendar feeds
 
-Each practitioner subscribes to `/api/calendar/<token>.ics`, issued from
-Settings → Calendar sync. Notes for whoever operates this:
+Practitioners and caregivers subscribe to `/api/calendar/<token>.ics`, issued
+from Settings → Calendar sync. One link per person carries whichever kinds of
+work apply to them — clinic appointments, home-care shifts, or both. Notes for
+whoever operates this:
 
 - **The URL is the credential.** A calendar client cannot sign in, so the token
   authorises the request on its own. Issuing a new link revokes the old one;

@@ -7,21 +7,34 @@ import {
   formatUtc,
   icsStatus,
   initialsOf,
-  type FeedAppointment,
+  type FeedEvent,
 } from "@/lib/domain/icalendar";
 
-const appointment = (over: Partial<FeedAppointment> = {}): FeedAppointment => ({
+const appointment = (over: Partial<FeedEvent> = {}): FeedEvent => ({
   id: "11111111-2222-3333-4444-555555555555",
+  kind: "appointment",
   startAt: new Date("2026-09-01T14:00:00Z"),
   endAt: new Date("2026-09-01T14:30:00Z"),
   status: "confirmed",
-  modality: "in_person",
-  serviceName: "Consultation",
+  title: "Consultation",
+  where: "in_person",
   patientFirst: "Ana",
   patientLast: "Ruiz",
   updatedAt: new Date("2026-08-30T10:00:00Z"),
+  detailPath: "/calendar/11111111-2222-3333-4444-555555555555",
   ...over,
 });
+
+const shift = (over: Partial<FeedEvent> = {}): FeedEvent =>
+  appointment({
+    id: "99999999-8888-7777-6666-555555555555",
+    kind: "shift",
+    status: "scheduled",
+    title: "Home care visit",
+    where: "client's home",
+    detailPath: "/care/agreement-1",
+    ...over,
+  });
 
 describe("escapeText", () => {
   it("escapes the characters that would otherwise end a property", () => {
@@ -72,7 +85,8 @@ describe("formatUtc", () => {
 
 describe("icsStatus", () => {
   it("keeps cancelled work visible as cancelled, not missing", () => {
-    for (const s of ["cancelled", "no_show", "rescheduled"]) {
+    // "missed" is a shift nobody attended: it holds no time either.
+    for (const s of ["cancelled", "no_show", "rescheduled", "missed"]) {
       expect(icsStatus(s)).toBe("CANCELLED");
     }
   });
@@ -102,7 +116,7 @@ describe("eventSummary", () => {
   });
 
   it("falls back to a generic title when no service is set", () => {
-    expect(eventSummary(appointment({ serviceName: null }), "minimal")).toBe(
+    expect(eventSummary(appointment({ title: "" }), "minimal")).toBe(
       "Appointment",
     );
   });
@@ -116,7 +130,7 @@ describe("buildCalendar", () => {
   const ics = (detail: "minimal" | "initials" | "full" = "initials") =>
     buildCalendar({
       calendarName: "Vicaria Health — Dr. Vega",
-      appointments: [appointment()],
+      events: [appointment()],
       detail,
       baseUrl: "https://admin.vicaria.ca",
       now: new Date("2026-08-31T12:00:00Z"),
@@ -151,6 +165,36 @@ describe("buildCalendar", () => {
     expect(ics("minimal")).not.toContain("Ana");
     expect(ics("initials")).not.toContain("Ruiz");
     expect(ics("full")).toContain("Ana Ruiz");
+  });
+
+  it("publishes home-care shifts through the same feed", () => {
+    const out = buildCalendar({
+      calendarName: "Vicaria — Marta",
+      events: [appointment(), shift()],
+      detail: "initials",
+      baseUrl: "https://admin.vicaria.ca",
+      now: new Date("2026-08-31T12:00:00Z"),
+    });
+    expect(out.match(/BEGIN:VEVENT/g)).toHaveLength(2);
+    expect(out).toContain("Home care visit — A.R.");
+    // Kind-prefixed UIDs: an appointment and a shift could otherwise collide.
+    expect(out).toContain("UID:shift-99999999-8888-7777-6666-555555555555@");
+    expect(out).toContain("UID:appointment-11111111-2222-3333-4444-555555555555@");
+    // Shifts link to the agreement, where the visit's tasks live.
+    expect(out).toContain("https://admin.vicaria.ca/care/agreement-1");
+  });
+
+  it("keeps the client's name out of a shift too", () => {
+    const out = buildCalendar({
+      calendarName: "Vicaria Care — Marta",
+      events: [shift()],
+      detail: "minimal",
+      baseUrl: "https://admin.vicaria.ca",
+    });
+    expect(out).not.toContain("Ana");
+    expect(out).not.toContain("Ruiz");
+    // And never the client's address.
+    expect(out).toContain("LOCATION:client's home");
   });
 
   it("writes times in UTC", () => {

@@ -11,17 +11,28 @@
 /** How much an event may say about the patient (see company settings). */
 export type CalendarDetail = "minimal" | "initials" | "full";
 
-export interface FeedAppointment {
+/**
+ * One thing on an employee's calendar: a clinic appointment or a home-care
+ * shift. Both lines of business publish through the same feed, because an
+ * employee who does both wants one subscription, not two.
+ */
+export interface FeedEvent {
   id: string;
+  /** Distinguishes the two so their ids can never collide in a UID. */
+  kind: "appointment" | "shift";
   startAt: Date;
   endAt: Date;
-  /** Appointment status as stored; mapped to an iCalendar STATUS below. */
+  /** Status as stored; mapped to an iCalendar STATUS below. */
   status: string;
-  modality: string;
-  serviceName: string | null;
+  /** What it is: the service booked, or the home-care visit. */
+  title: string;
+  /** Where it happens: the modality, or the client's home. */
+  where: string;
   patientFirst: string;
   patientLast: string;
   updatedAt: Date;
+  /** Path back into the backoffice for the detail this feed omits. */
+  detailPath: string;
 }
 
 /** Escape a TEXT value: backslash first, or it would escape our own escapes. */
@@ -77,6 +88,8 @@ export function icsStatus(status: string): "CONFIRMED" | "TENTATIVE" | "CANCELLE
     case "cancelled":
     case "no_show":
     case "rescheduled":
+    // A missed shift is one nobody attended; it holds no time either.
+    case "missed":
       return "CANCELLED";
     case "scheduled":
       return "TENTATIVE";
@@ -96,16 +109,16 @@ export function initialsOf(first: string, last: string): string {
 
 /** The event title, at the detail level the organization allows. */
 export function eventSummary(
-  appointment: FeedAppointment,
+  event: FeedEvent,
   detail: CalendarDetail,
 ): string {
-  const service = appointment.serviceName?.trim() || "Appointment";
-  if (detail === "minimal") return service;
+  const what = event.title.trim() || "Appointment";
+  if (detail === "minimal") return what;
   const who =
     detail === "full"
-      ? `${appointment.patientFirst} ${appointment.patientLast}`.trim()
-      : initialsOf(appointment.patientFirst, appointment.patientLast);
-  return who ? `${service} — ${who}` : service;
+      ? `${event.patientFirst} ${event.patientLast}`.trim()
+      : initialsOf(event.patientFirst, event.patientLast);
+  return who ? `${what} — ${who}` : what;
 }
 
 function modalityLabel(modality: string): string {
@@ -115,7 +128,7 @@ function modalityLabel(modality: string): string {
 export interface CalendarOptions {
   /** Shown as the calendar's name once subscribed. */
   calendarName: string;
-  appointments: FeedAppointment[];
+  events: FeedEvent[];
   detail: CalendarDetail;
   /** Absolute origin, e.g. https://admin.vicaria.ca — used for links and UIDs. */
   baseUrl: string;
@@ -124,7 +137,7 @@ export interface CalendarOptions {
 
 /** Build the whole VCALENDAR document. */
 export function buildCalendar(options: CalendarOptions): string {
-  const { calendarName, appointments, detail, baseUrl } = options;
+  const { calendarName, events, detail, baseUrl } = options;
   const now = options.now ?? new Date();
   const host = hostOf(baseUrl);
 
@@ -141,25 +154,26 @@ export function buildCalendar(options: CalendarOptions): string {
     "X-PUBLISHED-TTL:PT15M",
   ];
 
-  for (const appointment of appointments) {
-    const detailUrl = `${baseUrl}/calendar/${appointment.id}`;
+  for (const event of events) {
+    const detailUrl = `${baseUrl}${event.detailPath}`;
+    const where = modalityLabel(event.where);
     const description =
       detail === "minimal"
-        ? `${modalityLabel(appointment.modality)}\n\nOpen in Vicaria: ${detailUrl}`
-        : `${eventSummary(appointment, detail)}\n${modalityLabel(appointment.modality)}\n\nOpen in Vicaria: ${detailUrl}`;
+        ? `${where}\n\nOpen in Vicaria: ${detailUrl}`
+        : `${eventSummary(event, detail)}\n${where}\n\nOpen in Vicaria: ${detailUrl}`;
 
     lines.push(
       "BEGIN:VEVENT",
-      `UID:appointment-${appointment.id}@${host}`,
+      `UID:${event.kind}-${event.id}@${host}`,
       `DTSTAMP:${formatUtc(now)}`,
-      `DTSTART:${formatUtc(appointment.startAt)}`,
-      `DTEND:${formatUtc(appointment.endAt)}`,
-      `LAST-MODIFIED:${formatUtc(appointment.updatedAt)}`,
-      `SUMMARY:${escapeText(eventSummary(appointment, detail))}`,
+      `DTSTART:${formatUtc(event.startAt)}`,
+      `DTEND:${formatUtc(event.endAt)}`,
+      `LAST-MODIFIED:${formatUtc(event.updatedAt)}`,
+      `SUMMARY:${escapeText(eventSummary(event, detail))}`,
       `DESCRIPTION:${escapeText(description)}`,
-      `LOCATION:${escapeText(modalityLabel(appointment.modality))}`,
+      `LOCATION:${escapeText(where)}`,
       `URL:${detailUrl}`,
-      `STATUS:${icsStatus(appointment.status)}`,
+      `STATUS:${icsStatus(event.status)}`,
       // The clinic owns these events; nobody should edit them in their phone.
       "TRANSP:OPAQUE",
       "END:VEVENT",

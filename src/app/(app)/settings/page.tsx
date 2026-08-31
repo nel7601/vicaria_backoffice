@@ -22,7 +22,7 @@ import {
 } from "./calendar-sync-section";
 import {
   getCalendarFeedDetail,
-  listPractitionerFeeds,
+  listCalendarFeedEmployees,
 } from "@/lib/db/queries/calendar-feed";
 import { siteOrigin } from "@/lib/site-url";
 
@@ -90,9 +90,15 @@ export default async function SettingsPage() {
       categories = (await listServiceCategories(org.id)) as CategoryRow[];
       const origin = await siteOrigin();
       feedDetail = (await getCalendarFeedDetail(org.id)) as FeedDetail;
-      calendarFeeds = (await listPractitionerFeeds(org.id)).map((f) => ({
+      calendarFeeds = (await listCalendarFeedEmployees(org.id)).map((f) => ({
         employeeId: f.employeeId,
         name: `${f.firstName} ${f.lastName}`.trim(),
+        carries:
+          f.isPractitioner && f.isCaregiver
+            ? "appointments and shifts"
+            : f.isCaregiver
+              ? "home-care shifts"
+              : "appointments",
         url: f.token ? `${origin}/api/calendar/${f.token}.ics` : null,
         lastUsedAt: f.lastUsedAt ? f.lastUsedAt.toISOString() : null,
       }));

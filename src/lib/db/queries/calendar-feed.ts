@@ -1,14 +1,15 @@
-import { and, asc, eq, gte, isNull, lt } from "drizzle-orm";
+import { and, asc, eq, gte, isNull, lt, or } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import {
   appointments,
   calendarFeedTokens,
+  careShifts,
   companySettings,
   employees,
   patients,
   services,
 } from "@/lib/db/schema";
-import type { CalendarDetail } from "@/lib/domain/icalendar";
+import type { CalendarDetail, FeedEvent } from "@/lib/domain/icalendar";
 
 /** How far either side of today the feed publishes. */
 export const FEED_PAST_DAYS = 30;
@@ -19,6 +20,9 @@ export interface FeedSubscription {
   employeeId: string;
   employeeName: string;
   detail: CalendarDetail;
+  /** Whether to publish clinic appointments, home-care shifts, or both. */
+  isPractitioner: boolean;
+  isCaregiver: boolean;
 }
 
 /**
@@ -39,6 +43,8 @@ export async function resolveFeedToken(
       employeeId: calendarFeedTokens.employeeId,
       firstName: employees.firstName,
       lastName: employees.lastName,
+      isPractitioner: employees.isPractitioner,
+      isCaregiver: employees.isCaregiver,
       detail: companySettings.calendarFeedDetail,
     })
     .from(calendarFeedTokens)
@@ -60,6 +66,8 @@ export async function resolveFeedToken(
     organizationId: row.organizationId,
     employeeId: row.employeeId,
     employeeName: `${row.firstName} ${row.lastName}`.trim(),
+    isPractitioner: row.isPractitioner,
+    isCaregiver: row.isCaregiver,
     // No settings row yet: keep the patient's name out of it.
     detail: (row.detail ?? "initials") as CalendarDetail,
   };
@@ -74,49 +82,119 @@ export async function touchFeedToken(token: string): Promise<void> {
     .where(eq(calendarFeedTokens.token, token));
 }
 
-/** The employee's own appointments, in the window the feed publishes. */
-export async function listFeedAppointments(
+/**
+ * Everything on this employee's calendar in the published window.
+ *
+ * An employee can be both a practitioner and a caregiver; they get one
+ * subscription, and it carries whichever kinds of work apply to them. The two
+ * sources are read only when relevant, so a caregiver's feed never touches the
+ * appointments table.
+ */
+export async function listFeedEvents(
   subscription: FeedSubscription,
   now: Date,
-) {
+): Promise<FeedEvent[]> {
   const db = getDb();
   const from = new Date(now.getTime() - FEED_PAST_DAYS * 86_400_000);
   const to = new Date(now.getTime() + FEED_FUTURE_DAYS * 86_400_000);
 
-  return db
-    .select({
-      id: appointments.id,
-      startAt: appointments.startAt,
-      endAt: appointments.endAt,
-      status: appointments.status,
-      modality: appointments.modality,
-      updatedAt: appointments.updatedAt,
-      serviceName: services.nameEn,
-      patientFirst: patients.legalFirstName,
-      patientLast: patients.legalLastName,
-    })
-    .from(appointments)
-    .innerJoin(patients, eq(patients.id, appointments.patientId))
-    .leftJoin(services, eq(services.id, appointments.serviceId))
-    .where(
-      and(
-        eq(appointments.organizationId, subscription.organizationId),
-        eq(appointments.employeeId, subscription.employeeId),
-        gte(appointments.startAt, from),
-        lt(appointments.startAt, to),
-      ),
-    )
-    .orderBy(asc(appointments.startAt));
+  const events: FeedEvent[] = [];
+
+  if (subscription.isPractitioner) {
+    const rows = await db
+      .select({
+        id: appointments.id,
+        startAt: appointments.startAt,
+        endAt: appointments.endAt,
+        status: appointments.status,
+        modality: appointments.modality,
+        updatedAt: appointments.updatedAt,
+        serviceName: services.nameEn,
+        patientFirst: patients.legalFirstName,
+        patientLast: patients.legalLastName,
+      })
+      .from(appointments)
+      .innerJoin(patients, eq(patients.id, appointments.patientId))
+      .leftJoin(services, eq(services.id, appointments.serviceId))
+      .where(
+        and(
+          eq(appointments.organizationId, subscription.organizationId),
+          eq(appointments.employeeId, subscription.employeeId),
+          gte(appointments.startAt, from),
+          lt(appointments.startAt, to),
+        ),
+      );
+
+    events.push(
+      ...rows.map((r) => ({
+        id: r.id,
+        kind: "appointment" as const,
+        startAt: r.startAt,
+        endAt: r.endAt,
+        status: r.status,
+        title: r.serviceName ?? "Appointment",
+        where: r.modality,
+        patientFirst: r.patientFirst,
+        patientLast: r.patientLast,
+        updatedAt: r.updatedAt,
+        detailPath: `/calendar/${r.id}`,
+      })),
+    );
+  }
+
+  if (subscription.isCaregiver) {
+    const rows = await db
+      .select({
+        id: careShifts.id,
+        agreementId: careShifts.agreementId,
+        startAt: careShifts.startAt,
+        endAt: careShifts.endAt,
+        status: careShifts.status,
+        updatedAt: careShifts.updatedAt,
+        patientFirst: patients.legalFirstName,
+        patientLast: patients.legalLastName,
+      })
+      .from(careShifts)
+      .innerJoin(patients, eq(patients.id, careShifts.patientId))
+      .where(
+        and(
+          eq(careShifts.organizationId, subscription.organizationId),
+          eq(careShifts.caregiverId, subscription.employeeId),
+          gte(careShifts.startAt, from),
+          lt(careShifts.startAt, to),
+        ),
+      );
+
+    events.push(
+      ...rows.map((r) => ({
+        id: r.id,
+        kind: "shift" as const,
+        startAt: r.startAt,
+        endAt: r.endAt,
+        status: r.status,
+        title: "Home care visit",
+        // The address lives on the agreement, and an address in a third-party
+        // calendar is exactly the detail this feed is careful about.
+        where: "client's home",
+        patientFirst: r.patientFirst,
+        patientLast: r.patientLast,
+        updatedAt: r.updatedAt,
+        // The agreement is where a caregiver finds the visit's tasks.
+        detailPath: `/care/${r.agreementId}`,
+      })),
+    );
+  }
+
+  return events.sort((a, b) => a.startAt.getTime() - b.startAt.getTime());
 }
 
 /**
- * Practitioners and their live subscription link, for the Settings card.
+ * Everyone who has work worth putting on a calendar, with their live link.
  *
- * Only employees who see patients: a calendar of appointments means nothing
- * for someone who never appears in one. Home-care caregivers get their own
- * feed when Vicaria Care joins this.
+ * Practitioners and caregivers alike; somebody who is both appears once,
+ * because they get one subscription carrying both kinds of work.
  */
-export async function listPractitionerFeeds(organizationId: string) {
+export async function listCalendarFeedEmployees(organizationId: string) {
   const db = getDb();
   const { users } = await import("@/lib/db/schema");
   return db
@@ -124,6 +202,8 @@ export async function listPractitionerFeeds(organizationId: string) {
       employeeId: employees.id,
       firstName: employees.firstName,
       lastName: employees.lastName,
+      isPractitioner: employees.isPractitioner,
+      isCaregiver: employees.isCaregiver,
       token: calendarFeedTokens.token,
       lastUsedAt: calendarFeedTokens.lastUsedAt,
     })
@@ -139,7 +219,7 @@ export async function listPractitionerFeeds(organizationId: string) {
     .where(
       and(
         eq(employees.organizationId, organizationId),
-        eq(employees.isPractitioner, true),
+        or(eq(employees.isPractitioner, true), eq(employees.isCaregiver, true)),
         eq(users.isActive, true),
       ),
     )

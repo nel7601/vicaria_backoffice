@@ -1,6 +1,6 @@
 import { type NextRequest } from "next/server";
 import {
-  listFeedAppointments,
+  listFeedEvents,
   resolveFeedToken,
   touchFeedToken,
 } from "@/lib/db/queries/calendar-feed";
@@ -37,13 +37,21 @@ export async function GET(
   }
 
   const now = new Date();
-  const appointments = await listFeedAppointments(subscription, now);
+  const events = await listFeedEvents(subscription, now);
   // Best effort: a feed that cannot record its own use is still a working feed.
   await touchFeedToken(token).catch(() => {});
 
   const body = buildCalendar({
-    calendarName: `Vicaria Health — ${subscription.employeeName}`,
-    appointments,
+    // Name it for what it carries, so someone who does both kinds of work
+    // does not wonder why their shifts are under "Vicaria Health".
+    calendarName: `${
+      subscription.isPractitioner && subscription.isCaregiver
+        ? "Vicaria"
+        : subscription.isCaregiver
+          ? "Vicaria Care"
+          : "Vicaria Health"
+    } — ${subscription.employeeName}`,
+    events,
     detail: subscription.detail,
     baseUrl: publicOrigin(request),
     now,
