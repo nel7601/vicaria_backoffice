@@ -5,19 +5,16 @@ export default function ForgotPasswordPage() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-background p-4">
       <div className="w-full max-w-sm space-y-6 rounded-lg border border-border bg-surface p-8 shadow-sm">
-        <div className="flex items-center gap-3">
+        <div className="space-y-2">
           <Image
-            src="/brand/vicaria-symbol.png"
-            alt="Vicaria Health"
-            width={38}
-            height={50}
-            className="h-12 w-auto"
+            src="/brand/vicaria-logo.png"
+            alt="Vicaria Health Coaching"
+            width={1600}
+            height={509}
+            className="h-auto w-full max-w-[260px]"
             priority
           />
-          <div>
-            <div className="font-bold" style={{ fontFamily: "var(--font-libre-baskerville), Georgia, serif" }}>Vicaria Health</div>
-            <div className="text-xs text-muted">Reset your password</div>
-          </div>
+          <div className="text-xs text-muted">Reset your password</div>
         </div>
         <ForgotPasswordForm />
       </div>

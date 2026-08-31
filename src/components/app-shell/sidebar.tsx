@@ -28,10 +28,10 @@ export function Sidebar({ visibleHrefs }: { visibleHrefs: string[] }) {
     <aside className="flex w-60 shrink-0 flex-col border-r border-border bg-surface">
       <div className="flex h-16 items-center gap-2 border-b border-border px-5">
         <Image
-          src="/brand/vicaria-symbol.png"
-          alt="Vicaria Health"
-          width={30}
-          height={40}
+          src="/brand/vicaria-flower.png"
+          alt="Vicaria Health Coaching"
+          width={600}
+          height={529}
           className="h-10 w-auto"
           priority
         />
