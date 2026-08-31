@@ -11,6 +11,7 @@
   --background: #f6f1e9; /* vicaria canvas (cream) — deep enough that white cards lift off it */
   --surface: #ffffff;
   --surface-muted: #faf6f1; /* table headers, panels nested inside a card */
+  --surface-sunken: #efe7db; /* out-of-scope areas: days outside the open month */
   --foreground: #2c2c2c; /* vicaria charcoal */
   --muted: #6d625d; /* warm muted copy */
   --border: #e3d7cd; /* warm hairline */
@@ -38,6 +39,7 @@
   --color-background: var(--background);
   --color-surface: var(--surface);
   --color-surface-muted: var(--surface-muted);
+  --color-surface-sunken: var(--surface-sunken);
   --color-foreground: var(--foreground);
   --color-muted: var(--muted);
   --color-border: var(--border);

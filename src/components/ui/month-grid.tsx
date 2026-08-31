@@ -61,8 +61,13 @@ export function MonthGrid({
               <Link
                 key={day}
                 href={dayHref(day)}
-                className={`min-h-24 border-b border-r border-border/60 p-1.5 align-top transition hover:bg-background ${
-                  inMonth ? "" : "bg-background/60 text-muted"
+                /* Days from the neighbouring months are sunken, not hidden:
+                   their appointments are real and shown, but the tint says at
+                   a glance which cells belong to the month you opened. */
+                className={`min-h-24 border-b border-r border-border/60 p-1.5 align-top transition ${
+                  inMonth
+                    ? "hover:bg-surface-muted"
+                    : "bg-surface-sunken text-muted hover:brightness-[0.97]"
                 }`}
               >
                 <div
