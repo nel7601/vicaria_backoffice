@@ -25,7 +25,16 @@ interface FormValues {
   notesAdmin: string;
 }
 
-export function NewAppointmentForm() {
+export function NewAppointmentForm({
+  defaultStart,
+}: {
+  /**
+   * "YYYY-MM-DDTHH:mm" to prefill, from the day the user is looking at and
+   * the first hour nothing is booked. Editable like any other field — it
+   * saves typing, it does not decide anything.
+   */
+  defaultStart?: string;
+}) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
@@ -53,7 +62,11 @@ export function NewAppointmentForm() {
   }
 
   const { register, handleSubmit, reset } = useForm<FormValues>({
-    defaultValues: { modality: "in_person", durationMinutes: 60 },
+    defaultValues: {
+      modality: "in_person",
+      durationMinutes: 60,
+      startAt: defaultStart ?? "",
+    },
   });
 
   function onSubmit(v: FormValues) {
@@ -72,7 +85,11 @@ export function NewAppointmentForm() {
         notesAdmin: v.notesAdmin || undefined,
       });
       if (res.ok) {
-        reset();
+        reset({
+          modality: "in_person",
+          durationMinutes: 60,
+          startAt: defaultStart ?? "",
+        });
         setOpen(false);
         setMessage(null);
         // Jump the agenda to the appointment's day (clinic timezone) so the

@@ -13,6 +13,7 @@ import {
   APPOINTMENT_LEGEND,
   appointmentStatusStyle,
 } from "./status-display";
+import { firstFreeSlot } from "@/lib/domain/availability";
 import { NewAppointmentForm } from "./new-appointment-form";
 import { AppointmentRow } from "./appointment-row";
 import { dbErrorHint, withDbRetry } from "@/lib/db/retry";
@@ -97,6 +98,18 @@ export default async function CalendarPage({
     console.error("Calendar load failed:", e);
   }
 
+  // In month view the grid also shows neighbouring days; the count is about
+  // the month you opened, so it ignores them.
+  const inScope = isDayView
+    ? appts
+    : appts.filter((a) => clinicDateString(a.startAt).startsWith(monthStr));
+  const unconfirmed = inScope.filter((a) => a.status === "scheduled").length;
+
+  // Booking from a day should not ask what day it is.
+  const suggestedStart = isDayView
+    ? `${dayStr}T${firstFreeSlot({ dayStr, busy: appts })}`
+    : undefined;
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
@@ -104,10 +117,21 @@ export default async function CalendarPage({
           <h1 className="text-xl font-semibold">Calendar</h1>
           <p className="text-sm text-muted">
             {isDayView ? `Day agenda · ${dayStr}` : monthLabel(monthStr)}
+            {!isDayView && canCreate && (
+              // Booking moved into the day, so say where it went.
+              <span className="text-muted"> · open a day to book</span>
+            )}
           </p>
         </div>
-        {canCreate && !dbError && (
-          <NewAppointmentForm />
+        {/* The count answers the question the month view is opened for:
+            who still has to be called before the day arrives. */}
+        {!dbError && unconfirmed > 0 && (
+          <span className="rounded-full border-2 border-primary/40 px-3 py-1 text-sm text-primary-hover">
+            {unconfirmed} awaiting confirmation
+            <span className="text-muted">
+              {isDayView ? " today" : " this month"}
+            </span>
+          </span>
         )}
       </div>
 
@@ -220,6 +244,7 @@ export default async function CalendarPage({
 
         {/* Day agenda */}
         {!dbError && isDayView && (
+          <>
           <ul className="divide-y divide-border">
             {appts.length === 0 && (
               <li className="py-6 text-center text-sm text-muted">
@@ -243,6 +268,14 @@ export default async function CalendarPage({
               />
             ))}
           </ul>
+          {/* Booking lives inside the day, where the date is already decided
+              and the form can open on the first free hour. */}
+          {canCreate && (
+            <div className="mt-4 border-t border-border pt-4">
+              <NewAppointmentForm defaultStart={suggestedStart} />
+            </div>
+          )}
+          </>
         )}
       </Card>
     </div>
