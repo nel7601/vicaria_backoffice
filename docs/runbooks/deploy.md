@@ -16,6 +16,25 @@
    `0003_receipts_payment_nullable`.
 3. Verify health: sign in, load Patient 360, issue a test invoice in staging.
 
+## Domain (admin.vicaria.ca)
+
+Production is served at **https://admin.vicaria.ca**; `vicaria.ca` itself is the
+public site and is not touched by this project.
+
+DNS lives in Cloudflare:
+
+| Type | Name | Target | Proxy |
+|---|---|---|---|
+| CNAME | `admin` | the value Vercel shows under Settings → Domains | **DNS only** |
+
+The proxy setting is the part that bites. With Cloudflare's orange cloud on,
+Vercel cannot answer the domain-validation challenge, so the certificate is
+never issued, and a "Flexible" SSL mode in Cloudflare turns the same record
+into an infinite redirect loop. Vercel already terminates TLS and fronts a CDN;
+proxying it again buys nothing and hides the visitor's IP. Keep it grey.
+
+When Vercel reports *Valid Configuration* it issues the certificate itself.
+
 ## Email links (invitations, password reset)
 
 Supabase builds these links, not the app, and it will only redirect to a URL
@@ -27,20 +46,30 @@ with "Firefox can't connect to the server at localhost:3000".
 Set both, per environment:
 
 1. **Supabase → Authentication → URL Configuration**
-   - *Site URL*: the deployment's own origin, e.g. `https://<app>.vercel.app`.
-   - *Redirect URLs*: add `https://<app>.vercel.app/**` (and the staging and
-     `http://localhost:3000/**` entries for local work).
+   - *Site URL*: `https://admin.vicaria.ca`.
+   - *Redirect URLs*: `https://admin.vicaria.ca/**`, plus
+     `http://localhost:3000/**` for local work and the staging origin.
 2. **Vercel → Environment Variables**
-   - `NEXT_PUBLIC_SITE_URL=https://<app>.vercel.app` — the origin the app
-     builds invitation links from. Without it the app falls back to the
-     deployment domain and then to the request's own host, which is right
-     locally and wrong for a preview deployment sending real email.
+   - `NEXT_PUBLIC_SITE_URL=https://admin.vicaria.ca` — the origin the app builds
+     invitation links from. Without it the app falls back to the deployment
+     domain and then to the request's own host, which is right locally and
+     wrong for a preview deployment sending real email. It is read at build
+     time, so changing it needs a redeploy, not just a save.
 
 Invitations land on `/auth/confirm?next=/reset-password`, which redeems the
 token, establishes the session and forwards to the password form. A link that
 was already opened, or that is older than the project's expiry, cannot be
 redeemed twice — re-invite from Settings → Employees rather than resending the
 old email.
+
+## Anything else keyed to the public origin
+
+Changing the domain means revisiting these too:
+
+- **Square** webhook endpoint → `https://admin.vicaria.ca/api/webhooks/square`
+  (see `square-setup.md`).
+- **Assistant / MCP clients** point at `https://admin.vicaria.ca/api/assistant/v1`
+  and `/api/mcp`.
 
 ## Rolling back
 - App: redeploy the previous Vercel build.

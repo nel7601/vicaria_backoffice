@@ -19,6 +19,10 @@ Complete and sign off before enabling production access.
 
 ## Environment configuration to verify
 
+- `NEXT_PUBLIC_SITE_URL=https://admin.vicaria.ca` — the origin emailed links are
+  built from, and it must match Supabase's Site URL and allowed redirects
+  (see `docs/runbooks/deploy.md`). Read at build time: changing it needs a
+  redeploy.
 - `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` (client-safe).
 - `SUPABASE_SERVICE_ROLE_KEY`, `DATABASE_URL` (server only).
 - `SQUARE_ACCESS_TOKEN`, `SQUARE_WEBHOOK_SIGNATURE_KEY`, `SQUARE_ENVIRONMENT=production`,
