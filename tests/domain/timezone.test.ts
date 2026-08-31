@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   clinicDateString,
   clinicDayWindow,
+  clinicGridWindow,
   clinicMonthWindow,
   monthGridDays,
   shiftDay,
@@ -73,5 +74,37 @@ describe("month grid helpers", () => {
     expect(days[0]).toBe("2026-02-01");
     expect(days[days.length - 1]).toBe("2026-02-28");
     expect(days.length).toBe(28);
+  });
+});
+
+describe("clinicGridWindow", () => {
+  it("covers the neighbouring days the grid puts on screen", () => {
+    // August 2026 starts on a Saturday, so the grid opens on 26 July and, with
+    // 31 August a Monday, runs to 5 September.
+    const { from, to } = clinicGridWindow("2026-08");
+    const days = monthGridDays("2026-08");
+    expect(days[0]).toBe("2026-07-26");
+    expect(days[days.length - 1]).toBe("2026-09-05");
+    expect(from).toEqual(zonedMidnightUtc("2026-07-26"));
+    // Exclusive end: midnight after the last visible day.
+    expect(to).toEqual(zonedMidnightUtc("2026-09-06"));
+  });
+
+  it("is never narrower than the month itself", () => {
+    for (const month of ["2026-01", "2026-02", "2026-08", "2026-11"]) {
+      const grid = clinicGridWindow(month);
+      const monthOnly = clinicMonthWindow(month);
+      expect(grid.from.getTime()).toBeLessThanOrEqual(monthOnly.from.getTime());
+      expect(grid.to.getTime()).toBeGreaterThanOrEqual(monthOnly.to.getTime());
+    }
+  });
+
+  it("spans exactly the days the grid renders, across a DST change", () => {
+    // November 2026: the clocks go back inside this grid, so a naive
+    // day-count would drift by an hour and clip the last day.
+    const { from, to } = clinicGridWindow("2026-11");
+    const days = monthGridDays("2026-11");
+    expect(from).toEqual(zonedMidnightUtc(days[0]));
+    expect(to).toEqual(zonedMidnightUtc(shiftDay(days[days.length - 1], 1)));
   });
 });

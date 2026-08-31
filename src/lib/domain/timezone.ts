@@ -157,6 +157,23 @@ export function clinicWeekWindow(
 }
 
 /**
+ * [start, end) UTC window covering everything a month grid displays.
+ *
+ * A grid for August also shows the tail of July and the head of September, and
+ * loading only August leaves those cells empty — which reads as "no
+ * appointments that day" rather than "not loaded". Query what is on screen.
+ */
+export function clinicGridWindow(
+  monthStr: string,
+  timeZone: string = CLINIC_TZ,
+): { from: Date; to: Date } {
+  const days = monthGridDays(monthStr);
+  const from = zonedMidnightUtc(days[0], timeZone);
+  const to = zonedMidnightUtc(shiftDay(days[days.length - 1], 1), timeZone);
+  return { from, to };
+}
+
+/**
  * Day strings for a Sunday-start month grid: from the Sunday on/before the 1st
  * to the Saturday on/after the last day (pure calendar math, 35 or 42 cells).
  */

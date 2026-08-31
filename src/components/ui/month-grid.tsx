@@ -76,7 +76,10 @@ export function MonthGrid({
                 >
                   {Number(day.slice(8))}
                 </div>
-                <div className="space-y-0.5">
+                {/* Neighbouring days are shown, and shown as secondary: the
+                    grid tells the truth about them without competing with the
+                    month you actually opened. */}
+                <div className={`space-y-0.5 ${inMonth ? "" : "opacity-70"}`}>
                   {dayEntries.slice(0, MAX_CHIPS).map((e) => (
                     <div
                       key={e.id}

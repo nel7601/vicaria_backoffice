@@ -15,7 +15,7 @@ import { dbErrorHint, withDbRetry } from "@/lib/db/retry";
 import {
   clinicDateString,
   clinicDayWindow,
-  clinicMonthWindow,
+  clinicGridWindow,
   shiftDay,
   shiftMonth,
 } from "@/lib/domain/timezone";
@@ -63,9 +63,12 @@ export default async function CalendarPage({
   const isDayView = Boolean(date);
   const dayStr = date ?? clinicDateString(new Date());
   const monthStr = month ?? dayStr.slice(0, 7);
+  // The month view queries the whole grid, not just the month: its first and
+  // last rows show neighbouring days, and leaving those blank would read as
+  // "nothing booked" instead of "not loaded".
   const { from, to } = isDayView
     ? clinicDayWindow(dayStr)
-    : clinicMonthWindow(monthStr);
+    : clinicGridWindow(monthStr);
 
   const canCreate = can(roles, "patients_demographic", "create");
   const empQuery = employee ? `&employee=${employee}` : "";

@@ -10,7 +10,7 @@ import { formatMinutes, shiftMinutes } from "@/lib/domain/care";
 import {
   clinicDateString,
   clinicDayWindow,
-  clinicMonthWindow,
+  clinicGridWindow,
   shiftDay,
   shiftMonth,
 } from "@/lib/domain/timezone";
@@ -86,9 +86,12 @@ export default async function CareSchedulePage({
   const isDayView = Boolean(date);
   const dayStr = date ?? clinicDateString(new Date());
   const monthStr = month ?? dayStr.slice(0, 7);
+  // The month view queries the whole grid, not just the month: its first and
+  // last rows show neighbouring days, and leaving those blank would read as
+  // "nothing booked" instead of "not loaded".
   const { from, to } = isDayView
     ? clinicDayWindow(dayStr)
-    : clinicMonthWindow(monthStr);
+    : clinicGridWindow(monthStr);
   const cgQuery = caregiver ? `&caregiver=${caregiver}` : "";
 
   let shifts: Awaited<ReturnType<typeof listShiftsInWindow>> = [];
