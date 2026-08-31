@@ -135,6 +135,48 @@ export function CalendarSyncSection({
         </span>
       </label>
 
+      <details className="rounded-md border border-border bg-surface-muted p-3 text-sm">
+        <summary className="cursor-pointer font-medium">
+          How to subscribe (send this with the link)
+        </summary>
+        <div className="mt-3 space-y-3 text-muted">
+          <div>
+            <div className="font-medium text-foreground">Google Calendar</div>
+            <p>
+              Do this on a computer — the phone app cannot subscribe to a link,
+              though the calendar shows up there once it is added. At{" "}
+              <span className="font-mono text-xs">calendar.google.com</span>,
+              find <em>Other calendars</em> in the left column, press the{" "}
+              <strong>+</strong> beside it, choose <strong>From URL</strong>,
+              paste the link and press <em>Add calendar</em>.
+            </p>
+            <p className="mt-1">
+              Do not use <em>Import</em>: that copies today&apos;s appointments
+              once and never updates them again.
+            </p>
+          </div>
+          <div>
+            <div className="font-medium text-foreground">
+              iPhone, iPad or Mac
+            </div>
+            <p>
+              iPhone: Settings → Apps → Calendar → Calendar Accounts → Add
+              Account → Other → Add Subscribed Calendar, then paste the link.
+              Mac: Calendar → File → New Calendar Subscription. Apple lets you
+              choose how often it refreshes; every 15 minutes is a good setting.
+            </p>
+          </div>
+          <div>
+            <div className="font-medium text-foreground">Outlook</div>
+            <p>
+              At <span className="font-mono text-xs">outlook.com</span>:
+              Calendar → Add calendar → Subscribe from web, paste the link and
+              give it a name.
+            </p>
+          </div>
+        </div>
+      </details>
+
       <ul className="divide-y divide-border rounded-md border border-border">
         {rows.length === 0 && (
           <li className="p-3 text-sm text-muted">
