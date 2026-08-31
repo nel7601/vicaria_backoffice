@@ -28,23 +28,21 @@ function createDb() {
     prepare: false,
 
     /*
-     * Serverless connection hygiene.
+     * Keep connections from outliving their usefulness.
      *
-     * The client is cached across invocations, so a warm function reuses its
-     * connections — and a connection idle long enough gets closed by the
-     * pooler without telling us. Reusing one of those is what produces a
-     * "database not reachable" that a refresh makes go away: the first request
-     * discovers the dead socket, the second gets a fresh one.
+     * A warm serverless function reuses its pool between invocations, and the
+     * pooler closes connections that sit idle without telling us; inheriting
+     * one of those is the "database not reachable" that a refresh clears. So
+     * we retire idle and long-lived connections ourselves.
      *
-     * So we close idle connections ourselves, well before the pooler would,
-     * and recycle long-lived ones. `max` is small because the ceiling that
-     * matters is the project's total: it is per function instance, and Vercel
-     * runs many of them.
+     * The pool size stays at the library default. Pages load several queries
+     * at once, and a pool smaller than that turns every page into a queue —
+     * which is a worse problem than the one being solved. Dead sockets are
+     * handled by retiring them here and by the retry in `./retry`, not by
+     * starving the pool.
      */
-    max: 3,
-    idle_timeout: 20,
+    idle_timeout: 60,
     max_lifetime: 60 * 30,
-    connect_timeout: 15,
   });
   return drizzle(client, { schema });
 }

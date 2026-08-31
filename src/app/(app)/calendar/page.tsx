@@ -7,13 +7,11 @@ import {
   listActiveEmployees,
   listAppointments,
 } from "@/lib/db/queries/appointments";
-import { listPatients } from "@/lib/db/queries/patients";
-import { listActiveServices } from "@/lib/db/queries/catalog";
 import { MonthGrid } from "@/components/ui/month-grid";
 import { StatusLegend } from "@/components/ui/status-legend";
 import { NewAppointmentForm } from "./new-appointment-form";
 import { AppointmentRow } from "./appointment-row";
-import { withDbRetry } from "@/lib/db/retry";
+import { dbErrorHint, withDbRetry } from "@/lib/db/retry";
 import {
   clinicDateString,
   clinicDayWindow,
@@ -74,8 +72,6 @@ export default async function CalendarPage({
 
   let appts: Awaited<ReturnType<typeof listAppointments>> = [];
   let employees: { id: string; label: string }[] = [];
-  let patients: { id: string; label: string }[] = [];
-  let services: { id: string; label: string }[] = [];
   let dbError: string | null = null;
 
   try {
@@ -89,25 +85,18 @@ export default async function CalendarPage({
           employeeId: employee,
         }),
       );
-      const [emps, pats, svcs] = await withDbRetry(() =>
-        Promise.all([
-          listActiveEmployees(org.id),
-          listPatients({ organizationId: org.id, limit: 100 }),
-          listActiveServices(org.id),
-        ]),
-      );
+      // The practitioner filter is the only picker this view fills itself;
+      // the booking form fetches its own options when it opens.
+      const emps = await withDbRetry(() => listActiveEmployees(org.id));
       employees = emps.map((e) => ({
         id: e.id,
         label: `${e.firstName} ${e.lastName}`,
       }));
-      patients = pats.map((p) => ({
-        id: p.id,
-        label: `${p.preferredName || p.legalFirstName} ${p.legalLastName} (${p.patientNumber})`,
-      }));
-      services = svcs.map((s) => ({ id: s.id, label: s.nameEn }));
     }
   } catch (e) {
-    dbError = "Database not reachable. Configure DATABASE_URL and run migrations.";
+    // Name the failure on screen: "not reachable" sends everyone hunting in
+    // the wrong place, and the code says which place is the right one.
+    dbError = `Could not load the calendar — ${dbErrorHint(e)}. Try again; if it repeats, send this line to support.`;
     console.error("Calendar load failed:", e);
   }
 
@@ -121,11 +110,7 @@ export default async function CalendarPage({
           </p>
         </div>
         {canCreate && !dbError && (
-          <NewAppointmentForm
-            patients={patients}
-            employees={employees}
-            services={services}
-          />
+          <NewAppointmentForm />
         )}
       </div>
 

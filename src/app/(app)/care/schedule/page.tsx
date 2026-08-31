@@ -5,7 +5,7 @@ import { getSessionUser } from "@/lib/auth/session";
 import { can } from "@/lib/auth/rbac";
 import { getPrimaryOrganization } from "@/lib/db/queries/organization";
 import { listCaregivers, listShiftsInWindow } from "@/lib/db/queries/care";
-import { withDbRetry } from "@/lib/db/retry";
+import { dbErrorHint, withDbRetry } from "@/lib/db/retry";
 import { formatMinutes, shiftMinutes } from "@/lib/domain/care";
 import {
   clinicDateString,
@@ -111,7 +111,7 @@ export default async function CareSchedulePage({
       );
     }
   } catch (e) {
-    dbError = "Database not reachable. Run migration 0005 and retry.";
+    dbError = `Could not load the schedule — ${dbErrorHint(e)}. Try again; if it repeats, send this line to support.`;
     console.error("Care schedule load failed:", e);
   }
 

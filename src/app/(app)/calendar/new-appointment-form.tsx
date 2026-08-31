@@ -5,7 +5,10 @@ import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { Button } from "@/components/ui/button";
 import { Field, Input, inputClass } from "@/components/ui/field";
-import { createAppointmentAction } from "./actions";
+import {
+  appointmentFormOptionsAction,
+  createAppointmentAction,
+} from "./actions";
 
 interface Option {
   id: string;
@@ -22,19 +25,32 @@ interface FormValues {
   notesAdmin: string;
 }
 
-export function NewAppointmentForm({
-  patients,
-  employees,
-  services,
-}: {
-  patients: Option[];
-  employees: Option[];
-  services: Option[];
-}) {
+export function NewAppointmentForm() {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
   const [message, setMessage] = useState<string | null>(null);
+  // Fetched when the form is first opened, not on every month you page past.
+  const [options, setOptions] = useState<{
+    patients: Option[];
+    employees: Option[];
+    services: Option[];
+  } | null>(null);
+  const [loadingOptions, setLoadingOptions] = useState(false);
+
+  const patients = options?.patients ?? [];
+  const employees = options?.employees ?? [];
+  const services = options?.services ?? [];
+
+  function openForm() {
+    setOpen(true);
+    if (options || loadingOptions) return;
+    setLoadingOptions(true);
+    appointmentFormOptionsAction()
+      .then(setOptions)
+      .catch(() => setMessage("Could not load patients and services."))
+      .finally(() => setLoadingOptions(false));
+  }
 
   const { register, handleSubmit, reset } = useForm<FormValues>({
     defaultValues: { modality: "in_person", durationMinutes: 60 },
@@ -76,7 +92,7 @@ export function NewAppointmentForm({
   }
 
   if (!open) {
-    return <Button onClick={() => setOpen(true)}>New appointment</Button>;
+    return <Button onClick={openForm}>New appointment</Button>;
   }
 
   return (

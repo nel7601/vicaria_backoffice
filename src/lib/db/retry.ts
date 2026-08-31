@@ -42,3 +42,35 @@ export async function withDbRetry<T>(read: () => Promise<T>): Promise<T> {
     return read();
   }
 }
+
+/**
+ * A short, safe description of a database failure, for showing on screen.
+ *
+ * Postgres error codes and driver codes carry no patient data, and without
+ * them a report is just "it broke": the difference between a dropped
+ * connection, an exhausted pool and a missing table is the whole diagnosis.
+ * The message text is deliberately not included — that is what logs are for.
+ */
+export function dbErrorHint(error: unknown): string {
+  if (!error || typeof error !== "object") return "unknown error";
+  const code = (error as { code?: unknown }).code;
+  if (typeof code !== "string") return "unknown error";
+
+  switch (code) {
+    case "53300":
+      return "too many connections (53300) — check DATABASE_URL uses the pooler on port 6543";
+    case "57P01":
+    case "57P03":
+      return `the database was restarting (${code})`;
+    case "42P01":
+      return "a table is missing (42P01) — a migration has not been run";
+    case "28P01":
+      return "the database rejected the credentials (28P01)";
+    case "CONNECT_TIMEOUT":
+      return "the database did not answer in time (CONNECT_TIMEOUT)";
+    default:
+      return isConnectionError(error)
+        ? `the connection dropped (${code})`
+        : `error ${code}`;
+  }
+}

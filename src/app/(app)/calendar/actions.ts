@@ -139,3 +139,51 @@ export async function updateAppointmentAction(
   revalidatePath(`/calendar/${appointmentId}`);
   return { ok: true, appointmentId };
 }
+
+
+/**
+ * The options the booking form needs, loaded when it opens.
+ *
+ * These lists do not change as you page through months, but they used to be
+ * fetched on every navigation — three queries per click to fill a form nobody
+ * had opened yet. Moving them here makes changing month cost two queries
+ * instead of five, which is most of the load on a view people click through
+ * quickly.
+ */
+export async function appointmentFormOptionsAction(): Promise<{
+  patients: { id: string; label: string }[];
+  employees: { id: string; label: string }[];
+  services: { id: string; label: string }[];
+}> {
+  await requirePrincipal();
+  const { getPrimaryOrganization } = await import(
+    "@/lib/db/queries/organization"
+  );
+  const org = await getPrimaryOrganization();
+  if (!org) return { patients: [], employees: [], services: [] };
+
+  const [{ listActiveEmployees }, { listPatients }, { listActiveServices }] =
+    await Promise.all([
+      import("@/lib/db/queries/appointments"),
+      import("@/lib/db/queries/patients"),
+      import("@/lib/db/queries/catalog"),
+    ]);
+
+  const [employees, patients, services] = await Promise.all([
+    listActiveEmployees(org.id),
+    listPatients({ organizationId: org.id, limit: 100 }),
+    listActiveServices(org.id),
+  ]);
+
+  return {
+    employees: employees.map((e) => ({
+      id: e.id,
+      label: `${e.firstName} ${e.lastName}`,
+    })),
+    patients: patients.map((p) => ({
+      id: p.id,
+      label: `${p.preferredName || p.legalFirstName} ${p.legalLastName} (${p.patientNumber})`,
+    })),
+    services: services.map((s) => ({ id: s.id, label: s.nameEn })),
+  };
+}
