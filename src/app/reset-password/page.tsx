@@ -1,11 +1,11 @@
 import Image from "next/image";
-import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { ResetPasswordForm } from "./reset-password-form";
+import { ResetGate } from "./reset-gate";
 
 /**
- * Set a new password. Reached from the recovery-email link after
- * /auth/confirm verified the token and established a session.
+ * Set a new password. Reached from a recovery or invitation email after
+ * /auth/confirm has redeemed the token; when the session arrives in the URL
+ * fragment instead, the gate finishes the job in the browser.
  */
 export default async function ResetPasswordPage() {
   const supabase = await createClient();
@@ -27,21 +27,7 @@ export default async function ResetPasswordPage() {
           />
           <div className="text-xs text-muted">Choose a new password</div>
         </div>
-        {user ? (
-          <ResetPasswordForm />
-        ) : (
-          <div className="space-y-4">
-            <p className="text-sm text-danger">
-              This reset link is invalid or has expired.
-            </p>
-            <Link
-              href="/forgot-password"
-              className="text-sm text-primary hover:underline"
-            >
-              Request a new reset link →
-            </Link>
-          </div>
-        )}
+        <ResetGate hasServerSession={Boolean(user)} />
       </div>
     </div>
   );

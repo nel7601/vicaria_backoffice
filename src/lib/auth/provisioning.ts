@@ -23,19 +23,38 @@ export type ProvisionOutcome =
   | { ok: false; error: string };
 
 /**
- * Where the invitation link lands. New accounts have no password, so they go
- * to the reset form; it is a public path, and the email link carries the
- * session that authorises the change.
+ * Where the invitation link lands.
+ *
+ * It goes to the verifier, not straight to the reset form: a brand-new account
+ * has no session, and /reset-password needs one before it can change the
+ * password. /auth/confirm turns the emailed token into a session and then
+ * forwards. Both are public paths.
+ *
+ * Supabase only honours this when the URL is in the project's allowed redirect
+ * list; anything else silently falls back to the project's Site URL, which
+ * ships as http://localhost:3000. See docs/runbooks/deploy.md.
  */
 async function invitationRedirect(): Promise<string> {
-  const configured = process.env.NEXT_PUBLIC_SITE_URL;
-  if (configured) return `${configured.replace(/\/$/, "")}/reset-password`;
+  return `${await siteOrigin()}/auth/confirm?next=/reset-password`;
+}
 
-  // Fall back to the origin of the request being served.
+/**
+ * The origin to build email links from. Prefers the configured site URL, then
+ * the deployment's own production domain, and only then the origin of the
+ * request being served — which is right for local development and wrong for a
+ * preview deployment sending a real invitation.
+ */
+async function siteOrigin(): Promise<string> {
+  const configured = process.env.NEXT_PUBLIC_SITE_URL;
+  if (configured) return configured.replace(/\/$/, "");
+
+  const vercel = process.env.VERCEL_PROJECT_PRODUCTION_URL;
+  if (vercel) return `https://${vercel.replace(/\/$/, "")}`;
+
   const h = await headers();
   const host = h.get("x-forwarded-host") ?? h.get("host");
   const proto = h.get("x-forwarded-proto") ?? "http";
-  return host ? `${proto}://${host}/reset-password` : "/reset-password";
+  return host ? `${proto}://${host}` : "";
 }
 
 /** Look up an existing auth account by email, paging through the admin list. */
