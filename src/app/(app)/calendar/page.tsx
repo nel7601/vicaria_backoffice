@@ -13,6 +13,7 @@ import { MonthGrid } from "@/components/ui/month-grid";
 import { StatusLegend } from "@/components/ui/status-legend";
 import { NewAppointmentForm } from "./new-appointment-form";
 import { AppointmentRow } from "./appointment-row";
+import { withDbRetry } from "@/lib/db/retry";
 import {
   clinicDateString,
   clinicDayWindow,
@@ -78,19 +79,23 @@ export default async function CalendarPage({
   let dbError: string | null = null;
 
   try {
-    const org = await getPrimaryOrganization();
+    const org = await withDbRetry(() => getPrimaryOrganization());
     if (org) {
-      appts = await listAppointments({
-        organizationId: org.id,
-        from,
-        to,
-        employeeId: employee,
-      });
-      const [emps, pats, svcs] = await Promise.all([
-        listActiveEmployees(org.id),
-        listPatients({ organizationId: org.id, limit: 100 }),
-        listActiveServices(org.id),
-      ]);
+      appts = await withDbRetry(() =>
+        listAppointments({
+          organizationId: org.id,
+          from,
+          to,
+          employeeId: employee,
+        }),
+      );
+      const [emps, pats, svcs] = await withDbRetry(() =>
+        Promise.all([
+          listActiveEmployees(org.id),
+          listPatients({ organizationId: org.id, limit: 100 }),
+          listActiveServices(org.id),
+        ]),
+      );
       employees = emps.map((e) => ({
         id: e.id,
         label: `${e.firstName} ${e.lastName}`,

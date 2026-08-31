@@ -21,7 +21,31 @@ function createDb() {
       "DATABASE_URL is not set. Copy .env.example to .env.local and configure it.",
     );
   }
-  const client = postgres(connectionString, { prepare: false });
+  const client = postgres(connectionString, {
+    // Required by Supabase's transaction-mode pooler: it hands each
+    // transaction a different backend, so a prepared statement made on one is
+    // not there on the next.
+    prepare: false,
+
+    /*
+     * Serverless connection hygiene.
+     *
+     * The client is cached across invocations, so a warm function reuses its
+     * connections — and a connection idle long enough gets closed by the
+     * pooler without telling us. Reusing one of those is what produces a
+     * "database not reachable" that a refresh makes go away: the first request
+     * discovers the dead socket, the second gets a fresh one.
+     *
+     * So we close idle connections ourselves, well before the pooler would,
+     * and recycle long-lived ones. `max` is small because the ceiling that
+     * matters is the project's total: it is per function instance, and Vercel
+     * runs many of them.
+     */
+    max: 3,
+    idle_timeout: 20,
+    max_lifetime: 60 * 30,
+    connect_timeout: 15,
+  });
   return drizzle(client, { schema });
 }
 

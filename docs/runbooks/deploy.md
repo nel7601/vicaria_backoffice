@@ -91,6 +91,21 @@ Changing the domain means revisiting these too:
 - **Assistant / MCP clients** point at `https://admin.vicaria.ca/api/assistant/v1`
   and `/api/mcp`.
 
+## Database connections
+
+`DATABASE_URL` must be Supabase's **transaction pooler** string (port `6543`,
+host `…pooler.supabase.com`), not the direct connection on `5432`. Vercel runs
+many short-lived function instances; each one opening its own direct connection
+exhausts the project's limit, and the symptom is an intermittent "database not
+reachable" that a refresh clears.
+
+The client is configured to match (`src/lib/db/index.ts`): prepared statements
+off, because the pooler gives each transaction a different backend; a small
+`max` per instance, since the ceiling is the project total; and idle
+connections closed before the pooler would close them, so a warm function never
+inherits a socket that died while it was frozen. Reads in the calendar views
+retry once on a connection-level failure.
+
 ## Rolling back
 - App: redeploy the previous Vercel build.
 - DB: forward-fix with a new migration. Never edit an applied migration; issued

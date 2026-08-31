@@ -5,6 +5,7 @@ import { getSessionUser } from "@/lib/auth/session";
 import { can } from "@/lib/auth/rbac";
 import { getPrimaryOrganization } from "@/lib/db/queries/organization";
 import { listCaregivers, listShiftsInWindow } from "@/lib/db/queries/care";
+import { withDbRetry } from "@/lib/db/retry";
 import { formatMinutes, shiftMinutes } from "@/lib/domain/care";
 import {
   clinicDateString,
@@ -95,17 +96,19 @@ export default async function CareSchedulePage({
   let dbError: string | null = null;
 
   try {
-    const org = await getPrimaryOrganization();
+    const org = await withDbRetry(() => getPrimaryOrganization());
     if (org) {
-      [shifts, caregivers] = await Promise.all([
-        listShiftsInWindow({
-          organizationId: org.id,
-          from,
-          to,
-          caregiverId: caregiver,
-        }),
-        listCaregivers(org.id),
-      ]);
+      [shifts, caregivers] = await withDbRetry(() =>
+        Promise.all([
+          listShiftsInWindow({
+            organizationId: org.id,
+            from,
+            to,
+            caregiverId: caregiver,
+          }),
+          listCaregivers(org.id),
+        ]),
+      );
     }
   } catch (e) {
     dbError = "Database not reachable. Run migration 0005 and retry.";
