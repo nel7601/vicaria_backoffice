@@ -74,7 +74,7 @@ export default async function CarePage() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-border text-left text-xs uppercase text-muted">
+                <tr className="border-b-2 border-border-strong text-left text-xs font-semibold uppercase tracking-wide text-muted">
                   <th className="py-2 pr-4">Client</th>
                   <th className="py-2 pr-4">Hours / week</th>
                   <th className="py-2 pr-4">Period</th>
@@ -91,7 +91,7 @@ export default async function CarePage() {
                   </tr>
                 )}
                 {agreements.map((a) => (
-                  <tr key={a.id} className="border-b border-border/60">
+                  <tr key={a.id} className="border-b border-border/60 transition-colors hover:bg-surface-muted">
                     <td className="py-2.5 pr-4">
                       <span className="flex items-center gap-1.5">
                         <Link

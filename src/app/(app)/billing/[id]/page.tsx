@@ -124,7 +124,7 @@ export default async function InvoiceDetailPage({
         <div className="mt-3 overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-border text-left text-xs uppercase text-muted">
+              <tr className="border-b-2 border-border-strong text-left text-xs font-semibold uppercase tracking-wide text-muted">
                 <th className="py-2 pr-4">Description</th>
                 <th className="py-2 pr-4">Qty</th>
                 <th className="py-2 pr-4">Unit</th>
@@ -133,7 +133,7 @@ export default async function InvoiceDetailPage({
             </thead>
             <tbody>
               {items.map((it) => (
-                <tr key={it.id} className="border-b border-border/60">
+                <tr key={it.id} className="border-b border-border/60 transition-colors hover:bg-surface-muted">
                   <td className="py-2 pr-4">{it.description}</td>
                   <td className="py-2 pr-4">{it.quantity}</td>
                   <td className="py-2 pr-4">{formatCents(it.unitPriceCents)}</td>

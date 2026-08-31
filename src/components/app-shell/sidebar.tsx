@@ -4,7 +4,29 @@ import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { NAV_GROUPS } from "./nav";
+import { NAV_GROUPS, type NavAccent } from "./nav";
+
+/**
+ * Per-service-line colour: berry for the clinic, leaf for home care, warm
+ * neutral for what both share.
+ */
+const ACCENT: Record<NavAccent, { heading: string; rail: string; active: string }> = {
+  clinic: {
+    heading: "text-primary",
+    rail: "border-primary/25",
+    active: "bg-primary-soft text-primary-hover",
+  },
+  care: {
+    heading: "text-success",
+    rail: "border-success/25",
+    active: "bg-success-soft text-success",
+  },
+  neutral: {
+    heading: "text-muted",
+    rail: "border-border",
+    active: "bg-warm text-foreground",
+  },
+};
 
 export function Sidebar({ visibleHrefs }: { visibleHrefs: string[] }) {
   const pathname = usePathname();
@@ -49,11 +71,18 @@ export function Sidebar({ visibleHrefs }: { visibleHrefs: string[] }) {
         </div>
       </div>
       <nav className="flex-1 space-y-5 overflow-y-auto p-3" aria-label="Primary">
-        {groups.map((group, gi) => (
+        {groups.map((group, gi) => {
+          const accent = ACCENT[group.accent];
+          return (
           <div key={group.label ?? `top-${gi}`}>
             {group.label && (
               <div className="mb-1.5 flex items-center gap-2 px-3">
-                <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted/80">
+                <span
+                  className={cn(
+                    "text-[10px] font-bold uppercase tracking-[0.14em]",
+                    accent.heading,
+                  )}
+                >
                   {group.label}
                 </span>
                 <span className="h-px flex-1 bg-border" aria-hidden />
@@ -63,7 +92,7 @@ export function Sidebar({ visibleHrefs }: { visibleHrefs: string[] }) {
               className={cn(
                 "space-y-0.5",
                 // Labeled groups get a subtle rail so items read as nested.
-                group.label && "ml-3.5 border-l border-border pl-2",
+                group.label && cn("ml-3.5 border-l pl-2", accent.rail),
               )}
             >
               {group.items.map((item) => {
@@ -76,7 +105,7 @@ export function Sidebar({ visibleHrefs }: { visibleHrefs: string[] }) {
                     className={cn(
                       "block rounded-lg px-3 py-1.5 text-sm transition duration-150",
                       active
-                        ? "bg-primary-soft font-semibold text-primary-hover"
+                        ? cn("font-semibold", accent.active)
                         : "font-normal text-foreground/90 hover:bg-warm hover:text-foreground",
                     )}
                   >
@@ -86,7 +115,8 @@ export function Sidebar({ visibleHrefs }: { visibleHrefs: string[] }) {
               })}
             </div>
           </div>
-        ))}
+          );
+        })}
       </nav>
     </aside>
   );

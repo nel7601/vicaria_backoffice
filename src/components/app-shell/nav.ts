@@ -13,19 +13,29 @@ export interface NavItem {
   resource?: Resource;
 }
 
+/**
+ * Which service line a group belongs to. The shell colours the heading, the
+ * rail and the active item accordingly, so "which part of the business am I
+ * in" is answered by colour before it is read.
+ */
+export type NavAccent = "clinic" | "care" | "neutral";
+
 export interface NavGroup {
   /** Group heading; null renders items without a heading (top block). */
   label: string | null;
+  accent: NavAccent;
   items: NavItem[];
 }
 
 export const NAV_GROUPS: NavGroup[] = [
   {
     label: null,
+    accent: "neutral",
     items: [{ href: "/dashboard", label: "Dashboard" }],
   },
   {
     label: "Vicaria Health",
+    accent: "clinic",
     items: [
       { href: "/calendar", label: "Calendar", resource: "patients_demographic" },
       { href: "/encounters", label: "Encounters", resource: "clinical_notes" },
@@ -33,6 +43,7 @@ export const NAV_GROUPS: NavGroup[] = [
   },
   {
     label: "Vicaria Care",
+    accent: "care",
     items: [
       { href: "/care", label: "Home care", resource: "home_care" },
       { href: "/care/schedule", label: "Care schedule", resource: "home_care" },
@@ -40,6 +51,7 @@ export const NAV_GROUPS: NavGroup[] = [
   },
   {
     label: "Shared",
+    accent: "neutral",
     items: [
       { href: "/patients", label: "Patients", resource: "patients_demographic" },
       { href: "/billing", label: "Billing", resource: "invoices_payments" },

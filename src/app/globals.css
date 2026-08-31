@@ -8,21 +8,28 @@
  */
 :root {
   color-scheme: light;
-  --background: #fdfbf7; /* vicaria canvas (cream) */
+  --background: #f6f1e9; /* vicaria canvas (cream) — deep enough that white cards lift off it */
   --surface: #ffffff;
+  --surface-muted: #faf6f1; /* table headers, panels nested inside a card */
   --foreground: #2c2c2c; /* vicaria charcoal */
   --muted: #6d625d; /* warm muted copy */
-  --border: #e7ddd7; /* warm hairline */
+  --border: #e3d7cd; /* warm hairline */
+  --border-strong: #d4c4b7; /* section edges that must read as a division */
   --primary: #c7367c; /* family berry — primary actions (4.94:1 on white) */
   --primary-hover: #9e265f; /* berry deep — hover/pressed (7.25:1) */
-  --primary-soft: #fff2f8; /* family soft — selected/hover surfaces */
+  --primary-soft: #fdeef5; /* family soft — selected/hover surfaces */
   --primary-foreground: #ffffff;
   --danger: #b42318;
+  --danger-soft: #fdf0ef;
   --warning: #8a5a00; /* dark amber text-safe */
+  --warning-soft: #fdf4e3;
   --success: #3b692d; /* contrast leaf green (6.47:1 on white) */
-  --success-soft: #eff7ec; /* leaf soft — trust/verified surfaces */
+  --success-soft: #ecf5e8; /* leaf soft — trust/verified surfaces */
   --ring: #ffab00; /* attention gold focus */
-  --warm: #f8f0ed; /* warm feature surface (tabs, subtle fills) */
+  --warm: #f6ece7; /* warm feature surface (tabs, subtle fills) */
+  /* Cards sit on the cream canvas; the shadow does the separating, the
+     border only draws the edge. */
+  --shadow-card: 0 1px 2px rgb(76 54 40 / 6%), 0 4px 12px -4px rgb(76 54 40 / 8%);
   --shadow-feature:
     0 20px 25px -5px rgb(44 44 44 / 8%), 0 8px 10px -6px rgb(44 44 44 / 5%);
 }
@@ -30,21 +37,26 @@
 @theme inline {
   --color-background: var(--background);
   --color-surface: var(--surface);
+  --color-surface-muted: var(--surface-muted);
   --color-foreground: var(--foreground);
   --color-muted: var(--muted);
   --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
   --color-primary: var(--primary);
   --color-primary-hover: var(--primary-hover);
   --color-primary-soft: var(--primary-soft);
   --color-primary-foreground: var(--primary-foreground);
   --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
   --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
   --color-success: var(--success);
   --color-success-soft: var(--success-soft);
   --color-ring: var(--ring);
   --color-warm: var(--warm);
   --font-sans: var(--font-inter);
   --font-serif: var(--font-libre-baskerville);
+  --shadow-card: var(--shadow-card);
   --shadow-feature: var(--shadow-feature);
 }
 

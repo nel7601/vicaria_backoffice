@@ -178,7 +178,7 @@ export function DraftEditor({
       <div className="overflow-x-auto">
         <table className="w-full min-w-[680px] text-sm">
           <thead>
-            <tr className="text-left text-xs uppercase text-muted">
+            <tr className="text-left text-xs font-semibold uppercase tracking-wide text-muted">
               <th className="pb-1">Service / description</th>
               <th className="w-20 pb-1">Qty</th>
               <th className="w-28 pb-1">Unit (CAD)</th>

@@ -3,7 +3,7 @@ import { cn } from "@/lib/utils";
 
 /* Form control contract: warm border, 8px radius, leaf-green focus state. */
 export const inputClass =
-  "w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm focus-visible:outline-none focus-visible:border-success focus-visible:ring-2 focus-visible:ring-success/25";
+  "w-full rounded-lg border border-border bg-surface-muted px-3 py-2 text-sm transition-colors focus-visible:border-success focus-visible:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-success/25";
 
 export function Field({
   label,

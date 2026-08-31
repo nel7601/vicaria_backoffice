@@ -97,7 +97,7 @@ export default async function ReportViewPage({
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-border text-left text-xs uppercase text-muted">
+                  <tr className="border-b-2 border-border-strong text-left text-xs font-semibold uppercase tracking-wide text-muted">
                     {result.columns.map((c) => (
                       <th key={c} className="py-2 pr-4">
                         {c}
@@ -117,7 +117,7 @@ export default async function ReportViewPage({
                     </tr>
                   )}
                   {result.rows.map((row, i) => (
-                    <tr key={i} className="border-b border-border/60">
+                    <tr key={i} className="border-b border-border/60 transition-colors hover:bg-surface-muted">
                       {row.map((cell, j) => (
                         <td key={j} className="py-2 pr-4 tabular-nums">
                           {cell}

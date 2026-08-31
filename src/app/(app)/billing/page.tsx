@@ -252,7 +252,7 @@ export default async function BillingPage({
         <div className="mt-3 overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-border text-left text-xs uppercase text-muted">
+              <tr className="border-b-2 border-border-strong text-left text-xs font-semibold uppercase tracking-wide text-muted">
                 <th className="py-2 pr-4">Number</th>
                 <th className="py-2 pr-4">Patient</th>
                 <th className="py-2 pr-4">Total</th>
@@ -269,7 +269,7 @@ export default async function BillingPage({
                 </tr>
               )}
               {invoices.map((i) => (
-                <tr key={i.id} className="border-b border-border/60">
+                <tr key={i.id} className="border-b border-border/60 transition-colors hover:bg-surface-muted">
                   <td className="py-2 pr-4 font-mono text-xs">
                     <Link href={`/billing/${i.id}`} className="text-primary hover:underline">
                       {i.invoiceNumber ?? "(draft)"}

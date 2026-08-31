@@ -8,11 +8,12 @@ type Variant = "primary" | "secondary" | "ghost" | "danger";
  * secondary = leaf-soft surface with leaf-green text (never grey); 8px radius.
  */
 const VARIANTS: Record<Variant, string> = {
-  primary: "bg-primary text-primary-foreground hover:bg-primary-hover",
+  primary:
+    "bg-primary text-primary-foreground shadow-sm hover:bg-primary-hover",
   secondary:
-    "bg-success-soft text-success border border-success/20 hover:border-success/40",
+    "border border-success/25 bg-success-soft text-success hover:border-success/45 hover:bg-success/10",
   ghost: "text-foreground hover:bg-warm",
-  danger: "bg-danger text-white hover:opacity-90",
+  danger: "bg-danger text-white shadow-sm hover:opacity-90",
 };
 
 export interface ButtonProps

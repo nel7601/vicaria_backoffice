@@ -165,7 +165,7 @@ export function ServicesSection({
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-border text-left text-xs uppercase text-muted">
+            <tr className="border-b-2 border-border-strong text-left text-xs font-semibold uppercase tracking-wide text-muted">
               <th className="py-2 pr-4">Service (EN)</th>
               <th className="py-2 pr-4">Service (ES)</th>
               <th className="py-2 pr-4">Category</th>
@@ -188,7 +188,7 @@ export function ServicesSection({
               </tr>
             )}
             {shownServices.map((s) => (
-              <tr key={s.id} className="border-b border-border/60">
+              <tr key={s.id} className="border-b border-border/60 transition-colors hover:bg-surface-muted">
                 <td className="py-2 pr-4 font-medium">{s.nameEn}</td>
                 <td className="py-2 pr-4">{s.nameEs}</td>
                 <td className="py-2 pr-4 text-muted">{s.category ?? "—"}</td>
