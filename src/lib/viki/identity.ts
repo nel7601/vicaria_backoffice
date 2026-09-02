@@ -74,13 +74,14 @@ export async function vikiPrincipal(): Promise<
 }
 
 /**
- * Read a setting under its current name, falling back to what it used to be
- * called.
+ * Read one of Viki's settings from the environment.
  *
- * The app was called Yise while it was being built. Renaming the variables and
- * the deployment cannot happen in the same instant, and whichever goes first
- * would otherwise take the clinic's voice down until the other caught up.
+ * A helper rather than `process.env.VIKI_X` at each site so the prefix is
+ * declared once, and trimmed because these are pasted into a web form at the
+ * other end — a trailing newline there would fail every request with a message
+ * saying the token is wrong, which is true by one invisible byte and useless
+ * to act on.
  */
 function setting(name: string): string | undefined {
-  return (process.env[`VIKI_${name}`] ?? process.env[`YISE_${name}`])?.trim();
+  return process.env[`VIKI_${name}`]?.trim();
 }

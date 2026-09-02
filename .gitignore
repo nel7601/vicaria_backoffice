@@ -39,3 +39,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Basura de la CLI de Supabase: la versión que vio la última vez.
+supabase/.temp/
