@@ -13,11 +13,14 @@ import {
 } from "./actions";
 import { deleteBtnClass, editBtnClass } from "./services-section";
 
+export type TemplateScope = "clinical" | "administrative";
+
 export interface TemplateRow {
   templateId: string;
   name: string;
   serviceId: string | null;
   serviceName: string | null;
+  scope: TemplateScope;
   version: number | null;
   fields: TemplateFieldInput[];
   usageCount: number;
@@ -88,6 +91,7 @@ export function TemplatesSection({
   const [editing, setEditing] = useState<string | null>(null); // "new" | templateId
   const [name, setName] = useState("");
   const [serviceId, setServiceId] = useState("");
+  const [scope, setScope] = useState<TemplateScope>("clinical");
   const [fields, setFields] = useState<FieldDraft[]>([{ ...EMPTY_FIELD }]);
   const [error, setError] = useState<string | null>(null);
   const [showArchived, setShowArchived] = useState(false);
@@ -95,6 +99,7 @@ export function TemplatesSection({
   function openNew() {
     setName("");
     setServiceId("");
+    setScope("clinical");
     setFields([{ ...EMPTY_FIELD }]);
     setError(null);
     setEditing("new");
@@ -103,6 +108,7 @@ export function TemplatesSection({
   function openEdit(t: TemplateRow) {
     setName(t.name);
     setServiceId(t.serviceId ?? "");
+    setScope(t.scope);
     setFields(t.fields.length ? toDrafts(t.fields) : [{ ...EMPTY_FIELD }]);
     setError(null);
     setEditing(t.templateId);
@@ -116,6 +122,7 @@ export function TemplatesSection({
     return {
       name,
       serviceId: serviceId || undefined,
+      scope,
       fields: fields
         .filter((f) => f.label.trim())
         .map((f) => ({
@@ -196,6 +203,10 @@ export function TemplatesSection({
           )}
         </div>
         <div className="text-xs text-muted">
+          {t.scope === "administrative"
+            ? "Patient file (not clinical history)"
+            : "Clinical record"}
+          {" · "}
           {t.serviceName ? `Linked to ${t.serviceName}` : "Not linked to a service"}
           {t.usageCount > 0
             ? ` · used by ${t.usageCount} encounter${t.usageCount === 1 ? "" : "s"}`
@@ -231,9 +242,12 @@ export function TemplatesSection({
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted">
-        Note forms used in encounters. Linking a template to a service
-        auto-attaches it when starting an encounter from an appointment.
-        Editing publishes a new version; existing notes keep theirs.
+        Forms used in encounters and in the clinical record. Linking a template
+        to a service auto-attaches it when starting an encounter from an
+        appointment. Editing publishes a new version; existing notes keep
+        theirs. A template filed to the <em>patient file</em> — a release, an
+        authorization — is filled from the patient profile and never appears in
+        the clinical history.
       </p>
 
       <ul className="divide-y divide-border rounded-md border border-border">
@@ -282,20 +296,41 @@ export function TemplatesSection({
               />
             </label>
             <label className="flex flex-col gap-1 text-sm">
-              <span className="font-medium">Linked service (auto-attach)</span>
+              <span className="font-medium">Where answers are filed</span>
               <select
                 className={inputClass}
-                value={serviceId}
-                onChange={(e) => setServiceId(e.target.value)}
+                value={scope}
+                onChange={(e) => {
+                  const next = e.target.value as TemplateScope;
+                  setScope(next);
+                  // An administrative document is never attached to a visit,
+                  // so a linked service would have nothing to auto-attach to.
+                  if (next === "administrative") setServiceId("");
+                }}
               >
-                <option value="">None</option>
-                {services.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.label}
-                  </option>
-                ))}
+                <option value="clinical">Clinical record</option>
+                <option value="administrative">
+                  Patient file — not clinical history
+                </option>
               </select>
             </label>
+            {scope === "clinical" && (
+              <label className="flex flex-col gap-1 text-sm">
+                <span className="font-medium">Linked service (auto-attach)</span>
+                <select
+                  className={inputClass}
+                  value={serviceId}
+                  onChange={(e) => setServiceId(e.target.value)}
+                >
+                  <option value="">None</option>
+                  {services.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
           </div>
 
           <div className="space-y-2">

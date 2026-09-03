@@ -50,6 +50,8 @@ export async function getInvoice(organizationId: string, id: string) {
         paymentId: paymentAllocations.paymentId,
         method: payments.method,
         status: payments.status,
+        receivedAt: payments.receivedAt,
+        reference: payments.reference,
       })
       .from(paymentAllocations)
       .innerJoin(payments, eq(payments.id, paymentAllocations.paymentId))
@@ -353,4 +355,86 @@ export async function listPaymentsPaged(params: PagedPaymentsParams) {
     .offset((params.page - 1) * params.pageSize);
 
   return { rows, total: Number(total ?? 0) };
+}
+
+/**
+ * Everything a printed receipt shows: the receipt, the payment behind it (when
+ * it is a per-payment receipt), the invoice it settles and the patient.
+ */
+export async function getReceipt(organizationId: string, id: string) {
+  const db = getDb();
+  const [row] = await db
+    .select({
+      receipt: receipts,
+      payment: {
+        id: payments.id,
+        method: payments.method,
+        status: payments.status,
+        receivedAt: payments.receivedAt,
+        reference: payments.reference,
+      },
+      invoice: {
+        id: invoices.id,
+        invoiceNumber: invoices.invoiceNumber,
+        status: invoices.status,
+        totalCents: invoices.totalCents,
+        paidCents: invoices.paidCents,
+        balanceCents: invoices.balanceCents,
+        notes: invoices.notes,
+      },
+      patient: {
+        id: patients.id,
+        patientNumber: patients.patientNumber,
+        legalFirstName: patients.legalFirstName,
+        legalLastName: patients.legalLastName,
+        preferredName: patients.preferredName,
+        email: patients.email,
+        phoneE164: patients.phoneE164,
+        address: patients.address,
+      },
+    })
+    .from(receipts)
+    .leftJoin(payments, eq(payments.id, receipts.paymentId))
+    .leftJoin(invoices, eq(invoices.id, receipts.invoiceId))
+    .leftJoin(
+      patients,
+      or(eq(patients.id, payments.patientId), eq(patients.id, invoices.patientId)),
+    )
+    .where(and(eq(receipts.organizationId, organizationId), eq(receipts.id, id)))
+    .limit(1);
+  if (!row) return null;
+
+  // An invoice-level receipt has no single payment; list what it covers so the
+  // printed receipt can still name the methods used.
+  const methods = row.payment
+    ? [{ method: row.payment.method, amountCents: row.receipt.amountCents }]
+    : row.invoice
+      ? await db
+          .select({
+            method: payments.method,
+            amountCents: paymentAllocations.amountCents,
+          })
+          .from(paymentAllocations)
+          .innerJoin(payments, eq(payments.id, paymentAllocations.paymentId))
+          .where(
+            and(
+              eq(paymentAllocations.invoiceId, row.invoice.id),
+              eq(payments.status, "confirmed"),
+            ),
+          )
+      : [];
+
+  // Which services the money paid for — the receipt's "Service provided".
+  const items = row.invoice
+    ? await db
+        .select({
+          description: invoiceItems.description,
+          quantity: invoiceItems.quantity,
+          lineTotalCents: invoiceItems.lineTotalCents,
+        })
+        .from(invoiceItems)
+        .where(eq(invoiceItems.invoiceId, row.invoice.id))
+    : [];
+
+  return { ...row, methods, items };
 }

@@ -89,6 +89,7 @@ export async function listPatients(params: ListPatientsParams) {
       phoneE164: patients.phoneE164,
       status: patients.status,
       preferredLanguage: patients.preferredLanguage,
+      createdAt: patients.createdAt,
       hasCare: hasCareSql,
       hasClinic: hasClinicSql,
     })
@@ -121,6 +122,7 @@ export async function listPatientsPaged(
       phoneE164: patients.phoneE164,
       status: patients.status,
       preferredLanguage: patients.preferredLanguage,
+      createdAt: patients.createdAt,
       hasCare: hasCareSql,
       hasClinic: hasClinicSql,
     })

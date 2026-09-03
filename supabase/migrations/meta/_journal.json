@@ -120,6 +120,27 @@
       "when": 1788194114487,
       "tag": "0016_rate_limits",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1788280514487,
+      "tag": "0018_receipt_numbering",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1788366914487,
+      "tag": "0019_acquisition_sources",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1788453314487,
+      "tag": "0020_form_scope_and_thermocoagulation",
+      "breakpoints": true
     }
   ]
 }

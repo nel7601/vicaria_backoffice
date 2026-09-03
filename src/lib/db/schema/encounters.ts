@@ -11,6 +11,7 @@ import { primaryId, timestamps } from "./_shared";
 import {
   appointmentModalityEnum,
   encounterStatusEnum,
+  templateScopeEnum,
 } from "./enums";
 import { appointments } from "./appointments";
 import { organizations } from "./organizations";
@@ -30,6 +31,13 @@ export const encounterTemplates = pgTable("encounter_templates", {
     .references(() => organizations.id),
   name: varchar("name", { length: 160 }).notNull(),
   serviceId: uuid("service_id").references(() => services.id),
+  /**
+   * Whether answers belong in the clinical record or only in the patient's
+   * administrative file. A release of liability is signed by the patient and
+   * kept on file, but it is not clinical history: it must not appear in the
+   * chart's Evolution or in an encounter note.
+   */
+  scope: templateScopeEnum("scope").notNull().default("clinical"),
   // Archived templates keep history but leave every selection menu.
   archivedAt: timestamp("archived_at", { withTimezone: true, mode: "date" }),
   ...timestamps,

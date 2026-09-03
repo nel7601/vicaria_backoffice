@@ -8,6 +8,7 @@ import { getEmployeeIdForAuthUser } from "@/lib/db/queries/employee";
 import { listPatientsPaged } from "@/lib/db/queries/patients";
 import { Pager } from "@/components/ui/pager";
 import { RecordLink } from "@/components/ui/record-link";
+import { clinicDateString } from "@/lib/domain/timezone";
 
 const PATIENT_STATUSES = [
   "prospect",
@@ -170,12 +171,13 @@ export default async function PatientsPage({
                   <th className="py-2 pr-4">Lang</th>
                   <th className="py-2 pr-4">Service</th>
                   <th className="py-2 pr-4">Status</th>
+                  <th className="py-2 pr-4">Created</th>
                 </tr>
               </thead>
               <tbody>
                 {rows.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="py-6 text-center text-muted">
+                    <td colSpan={7} className="py-6 text-center text-muted">
                       No patients found.
                     </td>
                   </tr>
@@ -220,6 +222,9 @@ export default async function PatientsPage({
                       >
                         {p.status}
                       </span>
+                    </td>
+                    <td className="py-2 pr-4 whitespace-nowrap text-muted tabular-nums">
+                      {clinicDateString(p.createdAt)}
                     </td>
                   </tr>
                 ))}

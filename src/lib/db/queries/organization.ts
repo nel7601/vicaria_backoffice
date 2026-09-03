@@ -85,6 +85,22 @@ export async function listServiceCategories(organizationId: string) {
     .orderBy(serviceCategories.name);
 }
 
+/** Controlled acquisition-source list (spec §14 "Client Source"). */
+export async function listAcquisitionSources(organizationId: string) {
+  const db = getDb();
+  const { acquisitionSources } = await import("@/lib/db/schema");
+  return db
+    .select({
+      id: acquisitionSources.id,
+      name: acquisitionSources.name,
+      nameEs: acquisitionSources.nameEs,
+      isActive: acquisitionSources.isActive,
+    })
+    .from(acquisitionSources)
+    .where(eq(acquisitionSources.organizationId, organizationId))
+    .orderBy(acquisitionSources.name);
+}
+
 /** One row per employee, with all of their roles aggregated. */
 export async function listEmployees(organizationId: string) {
   const db = getDb();

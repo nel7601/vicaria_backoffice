@@ -91,3 +91,32 @@ h2 {
     transition-duration: 0.01ms !important;
   }
 }
+
+/*
+ * Printed documents (invoice, receipt). The browser's "Save as PDF" is the
+ * PDF generator: no server-side renderer to keep in sync with the screen, and
+ * the patient gets the same document whether it is printed or filed.
+ *
+ * Tailwind's `print:` variant hides the on-screen chrome; what cannot be
+ * expressed as a utility lives here.
+ */
+@media print {
+  @page {
+    size: letter;
+    margin: 16mm;
+  }
+  html,
+  body {
+    background: #fff;
+  }
+  /* Colour-critical marks (a ticked payment method, a paid stamp) must survive
+     the browser's default "no backgrounds" print setting. */
+  .print-document {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  /* Never split a total or a signature block across two sheets. */
+  .print-keep-together {
+    break-inside: avoid;
+  }
+}

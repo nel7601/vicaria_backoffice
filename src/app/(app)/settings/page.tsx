@@ -4,6 +4,7 @@ import { can } from "@/lib/auth/rbac";
 import {
   getCompanySettings,
   getPrimaryOrganization,
+  listAcquisitionSources,
   listEmployees,
   listServiceCategories,
   listServicesWithPrice,
@@ -14,6 +15,7 @@ import { CompanyForm } from "./company-form";
 import { EmployeesSection, type EmployeeRow } from "./employees-section";
 import { ServicesSection, type ServiceRow } from "./services-section";
 import { CategoriesSection, type CategoryRow } from "./categories-section";
+import { SourcesSection, type SourceRow } from "./sources-section";
 import { TemplatesSection, type TemplateRow } from "./templates-section";
 import {
   CalendarSyncSection,
@@ -64,6 +66,7 @@ export default async function SettingsPage() {
   let employees: EmployeeRow[] = [];
   let services: ServiceRow[] = [];
   let categories: CategoryRow[] = [];
+  let sources: SourceRow[] = [];
   let templates: TemplateRow[] = [];
   let calendarFeeds: CalendarFeedRow[] = [];
   let feedDetail: FeedDetail = "initials";
@@ -88,6 +91,7 @@ export default async function SettingsPage() {
       employees = (await listEmployees(org.id)) as EmployeeRow[];
       services = (await listServicesWithPrice(org.id)) as ServiceRow[];
       categories = (await listServiceCategories(org.id)) as CategoryRow[];
+      sources = (await listAcquisitionSources(org.id)) as SourceRow[];
       const origin = await siteOrigin();
       feedDetail = (await getCalendarFeedDetail(org.id)) as FeedDetail;
       calendarFeeds = (await listCalendarFeedEmployees(org.id)).map((f) => ({
@@ -109,6 +113,7 @@ export default async function SettingsPage() {
         serviceName: t.serviceName,
         version: t.version,
         fields: extractFields(t.schema),
+        scope: t.scope,
         usageCount: t.usageCount ?? 0,
         archived: Boolean(t.archivedAt),
       }));
@@ -149,6 +154,13 @@ export default async function SettingsPage() {
       </Card>
 
       <Card>
+        <CardTitle>Acquisition sources</CardTitle>
+        <div className="mt-4">
+          <SourcesSection sources={sources} canEdit={canEditCompany} />
+        </div>
+      </Card>
+
+      <Card>
         <CardTitle>Services &amp; prices</CardTitle>
         <div className="mt-4">
           <ServicesSection
@@ -160,7 +172,7 @@ export default async function SettingsPage() {
       </Card>
 
       <Card>
-        <CardTitle>Encounter templates</CardTitle>
+        <CardTitle>Forms &amp; templates</CardTitle>
         <div className="mt-4">
           <TemplatesSection
             templates={templates}

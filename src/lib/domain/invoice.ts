@@ -122,6 +122,11 @@ export function formatInvoiceNumber(prefix: string, sequence: number): string {
   return `${prefix}${String(sequence).padStart(5, "0")}`;
 }
 
+/** Format an immutable sequential receipt number (§FR-REC-001). */
+export function formatReceiptNumber(prefix: string, sequence: number): string {
+  return `${prefix}${String(sequence).padStart(5, "0")}`;
+}
+
 /**
  * Validate a proposed refund against the original payment (§FR-REF-001):
  * never more than the confirmed payment amount minus what was already refunded.

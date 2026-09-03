@@ -14,7 +14,7 @@ import {
   type DuplicateCheckResult,
 } from "../actions";
 
-export function NewPatientForm() {
+export function NewPatientForm({ sources }: { sources: string[] }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [dupes, setDupes] = useState<DuplicateCheckResult["matches"]>([]);
@@ -94,7 +94,14 @@ export function NewPatientForm() {
           </select>
         </Field>
         <Field label="Acquisition source" htmlFor="src">
-          <Input id="src" {...register("acquisitionSource")} />
+          <select id="src" className={inputClass} {...register("acquisitionSource")}>
+            <option value="">Unknown</option>
+            {sources.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
         </Field>
       </div>
 

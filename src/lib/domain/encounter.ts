@@ -92,6 +92,16 @@ export function validateAnswers(
       value === null ||
       (typeof value === "string" && value.trim() === "");
 
+    // A checkbox is never "empty": unticked is a real answer (false). A
+    // required checkbox is an acknowledgement — it must be ticked, or a
+    // consent form would validate with every paragraph refused.
+    if (field.type === "checkbox") {
+      if (field.required && value !== true) {
+        errors[field.key] = `${field.label} must be checked`;
+      }
+      continue;
+    }
+
     if (field.required && empty) {
       errors[field.key] = `${field.label} is required`;
       continue;

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
+import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { RecordLink } from "@/components/ui/record-link";
 import { getSessionUser } from "@/lib/auth/session";
@@ -10,6 +11,7 @@ import {
   listAllocatablePayments,
   listPendingEtransfersForInvoice,
   listPendingTerminalPaymentsForInvoice,
+  listReceiptsForInvoice,
 } from "@/lib/db/queries/billing";
 import {
   getPrimaryOrganization,
@@ -45,6 +47,7 @@ export default async function InvoiceDetailPage({
   let pendingTerminal: Awaited<
     ReturnType<typeof listPendingTerminalPaymentsForInvoice>
   > = [];
+  let invoiceReceipts: Awaited<ReturnType<typeof listReceiptsForInvoice>> = [];
   let serviceOptions: DraftServiceOption[] = [];
   let dbError: string | null = null;
   try {
@@ -52,11 +55,13 @@ export default async function InvoiceDetailPage({
     if (org) {
       data = await getInvoice(org.id, id);
       if (data) {
-        [allocatable, pendingEtransfers, pendingTerminal] = await Promise.all([
-          listAllocatablePayments(org.id, data.invoice.patientId),
-          listPendingEtransfersForInvoice(org.id, id),
-          listPendingTerminalPaymentsForInvoice(org.id, id),
-        ]);
+        [allocatable, pendingEtransfers, pendingTerminal, invoiceReceipts] =
+          await Promise.all([
+            listAllocatablePayments(org.id, data.invoice.patientId),
+            listPendingEtransfersForInvoice(org.id, id),
+            listPendingTerminalPaymentsForInvoice(org.id, id),
+            listReceiptsForInvoice(id),
+          ]);
         if (data.invoice.status === "draft") {
           serviceOptions = (await listServicesWithPrice(org.id))
             .filter((sv) => sv.isActive)
@@ -101,22 +106,27 @@ export default async function InvoiceDetailPage({
 
   return (
     <div className="space-y-6">
-      <div>
-        <Link href="/billing" className="text-sm text-primary hover:underline">
-          ← Billing
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <Link href="/billing" className="text-sm text-primary hover:underline">
+            ← Billing
+          </Link>
+          <h1 className="mt-1 text-xl font-semibold">
+            {invoice.invoiceNumber ?? "Pre-invoice (draft)"}
+          </h1>
+          <p className="flex items-center gap-1.5 text-sm text-muted">
+            {patient
+              ? `${patient.preferredName || patient.legalFirstName} ${patient.legalLastName}`
+              : ""}
+            {patient && <RecordLink patientId={patient.id} />}
+            <span>
+              · {invoice.status} · {invoice.language.toUpperCase()}
+            </span>
+          </p>
+        </div>
+        <Link href={`/print/invoice/${invoice.id}`} target="_blank">
+          <Button variant="secondary">Print / PDF</Button>
         </Link>
-        <h1 className="mt-1 text-xl font-semibold">
-          {invoice.invoiceNumber ?? "Pre-invoice (draft)"}
-        </h1>
-        <p className="flex items-center gap-1.5 text-sm text-muted">
-          {patient
-            ? `${patient.preferredName || patient.legalFirstName} ${patient.legalLastName}`
-            : ""}
-          {patient && <RecordLink patientId={patient.id} />}
-          <span>
-            · {invoice.status} · {invoice.language.toUpperCase()}
-          </span>
-        </p>
       </div>
 
       <Card>
@@ -194,6 +204,44 @@ export default async function InvoiceDetailPage({
                 {a.method} · {a.status}
               </span>
               <span className="tabular-nums">{formatCents(a.amountCents)}</span>
+            </li>
+          ))}
+        </ul>
+      </Card>
+
+      <Card>
+        <CardTitle>Receipts</CardTitle>
+        <p className="mt-1 text-sm text-muted">
+          Issued receipts for this invoice. Generate one from Actions →
+          Advanced actions.
+        </p>
+        <ul className="mt-3 divide-y divide-border text-sm">
+          {invoiceReceipts.length === 0 && (
+            <li className="py-2 text-muted">No receipts issued yet.</li>
+          )}
+          {invoiceReceipts.map((r) => (
+            <li key={r.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
+              <span>
+                <span className="font-mono text-xs">
+                  {r.receiptNumber ?? "(unnumbered)"}
+                </span>
+                <span className="text-muted">
+                  {" "}
+                  · {new Date(r.issuedAt).toLocaleDateString("en-CA", {
+                    timeZone: "America/Toronto",
+                  })}
+                </span>
+              </span>
+              <span className="flex items-center gap-3">
+                <span className="tabular-nums">{formatCents(r.amountCents)}</span>
+                <Link
+                  href={`/print/receipt/${r.id}`}
+                  target="_blank"
+                  className="text-sm text-primary hover:underline"
+                >
+                  Print / PDF
+                </Link>
+              </span>
             </li>
           ))}
         </ul>

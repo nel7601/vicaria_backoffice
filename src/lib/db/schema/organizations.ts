@@ -41,6 +41,10 @@ export const companySettings = pgTable("company_settings", {
   // Invoice numbering configuration (§FR-INV-002).
   invoiceNumberPrefix: varchar("invoice_number_prefix", { length: 16 }).default("INV-"),
   invoiceNextSequence: integer("invoice_next_sequence").notNull().default(1),
+  // Receipt numbering (§FR-REC-001): a printed receipt needs its own number,
+  // independent of the invoice's, because one invoice may receipt twice.
+  receiptNumberPrefix: varchar("receipt_number_prefix", { length: 16 }).default("REC-"),
+  receiptNextSequence: integer("receipt_next_sequence").notNull().default(1),
   // Tax config, e.g. { "HST": { rate_bps: 1300 } }. Rates in basis points.
   taxConfig: jsonb("tax_config").notNull().default({}),
   legalFooterEn: text("legal_footer_en"),

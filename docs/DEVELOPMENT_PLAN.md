@@ -119,7 +119,23 @@ the product reference. Status of its deltas:
   hours (`generateCareInvoiceAction`).
 - §13 Navigation: grouped sidebar (Vicaria Health / Vicaria Care / Shared);
   month calendars for both service lines; Patients service-line column and
-  filters.
+  filters. A view reached from several places carries `?from=` and offers a
+  back link to it (visit → clinical record → back to the visit).
+- §11 Printable documents: `/print/invoice/[id]` and `/print/receipt/[id]`
+  render the invoice and the payment receipt as a sheet of paper; the browser's
+  print dialog is the PDF writer. An issued invoice reprints from its frozen
+  snapshot, which now also freezes the clinic and bill-to blocks. Receipts get
+  their own number sequence (`REC-`, configurable), assigned wherever a receipt
+  is created.
+- §5/§14 Patient record: details are editable in place (audited before/after),
+  the creation date is shown on the profile and in the list, and acquisition
+  source is a controlled list maintained in Settings — MKT-01 counted
+  "Google"/"google" separately while it was free text.
+- §6 Form scope: a template files its answers either in the clinical record or
+  on the patient's administrative file. A signed release (Vasculyze 2G) is kept
+  with the patient but never appears in the chart. Loaded with it: the
+  Thermocoagulation client form (clinical). The Spanish Health History was
+  retired in favour of the English one.
 
 **Next (not yet built)**
 - §9 Coaching packages UI: purchase, session balance, consumption on

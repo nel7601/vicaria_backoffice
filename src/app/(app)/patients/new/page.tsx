@@ -3,6 +3,10 @@ import Link from "next/link";
 import { Card, CardTitle } from "@/components/ui/card";
 import { getSessionUser } from "@/lib/auth/session";
 import { can } from "@/lib/auth/rbac";
+import {
+  getPrimaryOrganization,
+  listAcquisitionSources,
+} from "@/lib/db/queries/organization";
 import { NewPatientForm } from "./new-patient-form";
 
 export default async function NewPatientPage() {
@@ -19,6 +23,20 @@ export default async function NewPatientPage() {
     );
   }
 
+  // A missing database must not block the form; it just leaves the source
+  // menu empty, which the form handles.
+  let sources: string[] = [];
+  try {
+    const org = await getPrimaryOrganization();
+    if (org) {
+      sources = (await listAcquisitionSources(org.id))
+        .filter((s) => s.isActive)
+        .map((s) => s.name);
+    }
+  } catch (e) {
+    console.error("Acquisition sources load failed:", e);
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -32,7 +50,7 @@ export default async function NewPatientPage() {
         </p>
       </div>
       <Card>
-        <NewPatientForm />
+        <NewPatientForm sources={sources} />
       </Card>
     </div>
   );

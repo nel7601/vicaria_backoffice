@@ -10,7 +10,9 @@ import { z } from "zod";
 export const templateFieldSchema = z
   .object({
     key: z.string().trim().min(1).max(60).regex(/^[a-z0-9_]+$/, "Invalid key"),
-    label: z.string().trim().min(1, "Field label required").max(120),
+    // A consent paragraph is the field label ("I understand that…"), so the
+    // cap has to fit legal wording, not just a short question.
+    label: z.string().trim().min(1, "Field label required").max(400),
     type: z.enum([
       "text",
       "textarea",
@@ -34,6 +36,11 @@ export const templateFieldSchema = z
 export const templateSchema = z.object({
   name: z.string().trim().min(1, "Required").max(160),
   serviceId: z.string().uuid().optional().or(z.literal("")),
+  /**
+   * Where the answers belong: in the clinical record, or on the patient's
+   * administrative file (a signed release is not clinical history).
+   */
+  scope: z.enum(["clinical", "administrative"]),
   fields: z.array(templateFieldSchema).min(1, "Add at least one field"),
 });
 

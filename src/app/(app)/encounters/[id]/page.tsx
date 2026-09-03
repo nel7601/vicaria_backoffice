@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
+import { BackLink } from "@/components/ui/back-link";
+import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { RecordLink } from "@/components/ui/record-link";
 import { getSessionUser } from "@/lib/auth/session";
@@ -22,10 +24,12 @@ import {
  */
 export default async function EncounterPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ from?: string }>;
 }) {
-  const { id } = await params;
+  const [{ id }, { from }] = await Promise.all([params, searchParams]);
   const user = await getSessionUser();
   if (!user) redirect("/login");
   if (!can(user.roles, "clinical_notes", "read")) {
@@ -90,17 +94,28 @@ export default async function EncounterPage({
 
   return (
     <div className="space-y-6">
-      <div>
-        <Link href="/encounters" className="text-sm text-primary hover:underline">
-          ← Encounters
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <BackLink
+            from={from}
+            fallbackHref="/encounters"
+            fallbackLabel="Encounters"
+          />
+          <h1 className="mt-1 flex items-center gap-2 text-xl font-semibold">
+            Encounter{patientName ? ` — ${patientName}` : ""}
+            <RecordLink patientId={encounter.patientId} />
+          </h1>
+          <p className="text-sm text-muted">
+            {encounter.status} · structured forms live in the clinical record
+          </p>
+        </div>
+        {/* Named link as well as the icon: filling a form mid-visit is a round
+            trip, and the record sends you straight back here. */}
+        <Link
+          href={`/patients/${encounter.patientId}/record?from=${encodeURIComponent(`/encounters/${id}`)}`}
+        >
+          <Button variant="secondary">Open clinical record</Button>
         </Link>
-        <h1 className="mt-1 flex items-center gap-2 text-xl font-semibold">
-          Encounter{patientName ? ` — ${patientName}` : ""}
-          <RecordLink patientId={encounter.patientId} />
-        </h1>
-        <p className="text-sm text-muted">
-          {encounter.status} · structured forms live in the clinical record
-        </p>
       </div>
 
       <Card>

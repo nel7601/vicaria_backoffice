@@ -1,4 +1,4 @@
-import { authorizePrincipal } from "./authorize-principal";
+import { authorizePrincipal, principalCan } from "./authorize-principal";
 import { AuthenticationError, AuthorizationError } from "./errors";
 import {
   resolvePrincipalIdentity,
@@ -80,6 +80,27 @@ export async function authorize(
   // after the check so an unauthorized call still costs no query.
   const { dbUserId } = await resolvePrincipalIdentity(user.authId);
 
+  return { ...user, dbUserId };
+}
+
+/**
+ * Assert the user may perform ANY ONE of the given resource/action pairs.
+ *
+ * Some work is legitimately reached by two different rights: filing a signed
+ * release is administrative for reception and clinical for the practitioner
+ * who watched it being signed. Forcing one resource on both would lock out
+ * whichever role the matrix did not happen to name.
+ */
+export async function authorizeAny(
+  pairs: [Resource, Action][],
+): Promise<AuthorizedUser> {
+  const user = await requireUser();
+  const principal = principalFromSession(user);
+  if (!pairs.some(([resource, action]) => principalCan(principal, resource, action))) {
+    const [resource, action] = pairs[0];
+    throw new AuthorizationError(resource, action);
+  }
+  const { dbUserId } = await resolvePrincipalIdentity(user.authId);
   return { ...user, dbUserId };
 }
 

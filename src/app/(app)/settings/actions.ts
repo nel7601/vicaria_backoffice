@@ -7,6 +7,7 @@ import { provisionEmployeeAccount } from "@/lib/auth/provisioning";
 import { recordAudit } from "@/lib/audit/record";
 import { getDb } from "@/lib/db";
 import {
+  acquisitionSources,
   appointments,
   companySettings,
   employees,
@@ -16,6 +17,7 @@ import {
   invoiceItems,
   locations,
   organizations,
+  patients,
   serviceCategories,
   servicePrices,
   services,
@@ -27,6 +29,7 @@ import { getPrimaryOrganization } from "@/lib/db/queries/organization";
 import {
   companySettingsSchema,
   employeeSchema,
+  updateAcquisitionSourceSchema,
   locationSchema,
   serviceSchema,
   updateCategorySchema,
@@ -894,6 +897,7 @@ export async function createTemplateAction(raw: unknown): Promise<ActionResult> 
         organizationId: org.id,
         name: data.name,
         serviceId: data.serviceId || null,
+        scope: data.scope,
       })
       .returning();
     await tx.insert(encounterTemplateVersions).values({
@@ -913,7 +917,7 @@ export async function createTemplateAction(raw: unknown): Promise<ActionResult> 
     action: "create",
     entityType: "encounter_template",
     entityId: created.id,
-    after: { name: data.name, fields: data.fields.length },
+    after: { name: data.name, scope: data.scope, fields: data.fields.length },
   });
 
   revalidatePath("/settings");
@@ -967,6 +971,7 @@ export async function publishTemplateVersionAction(
       .set({
         name: data.name,
         serviceId: data.serviceId || null,
+        scope: data.scope,
         updatedAt: new Date(),
       })
       .where(eq(encounterTemplates.id, templateId));
@@ -986,7 +991,7 @@ export async function publishTemplateVersionAction(
     action: "update",
     entityType: "encounter_template",
     entityId: templateId,
-    after: { name: data.name, version: nextVersion },
+    after: { name: data.name, scope: data.scope, version: nextVersion },
   });
 
   revalidatePath("/settings");
@@ -1211,4 +1216,225 @@ export async function inviteEmployeeAction(
       ? undefined
       : "That address already had an account, so it was linked without sending a new email.",
   };
+}
+
+
+// ---------------------------------------------------------------------------
+// Acquisition sources (spec §14 "Client Source")
+// ---------------------------------------------------------------------------
+
+/** Add a source patients can be attributed to. */
+export async function createAcquisitionSourceAction(
+  raw: unknown,
+): Promise<ActionResult> {
+  const user = await authorize("configuration", "update");
+  const input = raw as { name?: string; nameEs?: string } | null;
+  const clean = (input?.name ?? "").trim();
+  if (!clean || clean.length > 120) {
+    return { ok: false, error: "Source name is required (max 120 chars)." };
+  }
+  const org = await getPrimaryOrganization();
+  if (!org) return { ok: false, error: "Organization not found." };
+
+  const db = getDb();
+  try {
+    const [created] = await db
+      .insert(acquisitionSources)
+      .values({
+        organizationId: org.id,
+        name: clean,
+        nameEs: blankToNull((input?.nameEs ?? "").trim()),
+      })
+      .returning();
+    await recordAudit({
+      organizationId: org.id,
+      actorUserId: user.authId,
+      action: "create",
+      entityType: "acquisition_source",
+      entityId: created.id,
+      after: { name: clean },
+    });
+  } catch (e) {
+    return {
+      ok: false,
+      error:
+        e instanceof Error && e.message.includes("uq_acquisition_source")
+          ? "That source already exists."
+          : "Could not create source.",
+    };
+  }
+
+  revalidatePath("/settings");
+  return { ok: true };
+}
+
+/**
+ * Rename or deactivate a source. A rename is carried over to the patients
+ * already attributed to it — otherwise the report would show the old and new
+ * names as two separate channels, which is exactly the mess the list exists
+ * to prevent.
+ */
+export async function updateAcquisitionSourceAction(
+  sourceId: string,
+  raw: unknown,
+): Promise<ActionResult> {
+  const user = await authorize("configuration", "update");
+  const parsed = updateAcquisitionSourceSchema.safeParse(raw);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
+  }
+  const org = await getPrimaryOrganization();
+  if (!org) return { ok: false, error: "Organization not found." };
+
+  const db = getDb();
+  const [existing] = await db
+    .select()
+    .from(acquisitionSources)
+    .where(
+      and(
+        eq(acquisitionSources.organizationId, org.id),
+        eq(acquisitionSources.id, sourceId),
+      ),
+    )
+    .limit(1);
+  if (!existing) return { ok: false, error: "Source not found." };
+
+  const data = parsed.data;
+  try {
+    await db.transaction(async (tx) => {
+      await tx
+        .update(acquisitionSources)
+        .set({
+          name: data.name,
+          nameEs: blankToNull(data.nameEs),
+          isActive: data.isActive,
+          updatedAt: new Date(),
+        })
+        .where(eq(acquisitionSources.id, sourceId));
+
+      if (existing.name !== data.name) {
+        await tx
+          .update(patients)
+          .set({ acquisitionSource: data.name, updatedAt: new Date() })
+          .where(
+            and(
+              eq(patients.organizationId, org.id),
+              eq(patients.acquisitionSource, existing.name),
+            ),
+          );
+      }
+    });
+  } catch (e) {
+    return {
+      ok: false,
+      error:
+        e instanceof Error && e.message.includes("uq_acquisition_source")
+          ? "That source name already exists."
+          : "Could not update source.",
+    };
+  }
+
+  await recordAudit({
+    organizationId: org.id,
+    actorUserId: user.authId,
+    action: "update",
+    entityType: "acquisition_source",
+    entityId: sourceId,
+    before: { name: existing.name, isActive: existing.isActive },
+    after: { name: data.name, isActive: data.isActive },
+  });
+
+  revalidatePath("/settings");
+  return { ok: true };
+}
+
+/** Archive or unarchive a source without touching the patients using it. */
+export async function setAcquisitionSourceArchivedAction(
+  sourceId: string,
+  archived: boolean,
+): Promise<ActionResult> {
+  const user = await authorize("configuration", "update");
+  const org = await getPrimaryOrganization();
+  if (!org) return { ok: false, error: "Organization not found." };
+
+  const db = getDb();
+  const [existing] = await db
+    .select({ id: acquisitionSources.id, isActive: acquisitionSources.isActive })
+    .from(acquisitionSources)
+    .where(
+      and(
+        eq(acquisitionSources.organizationId, org.id),
+        eq(acquisitionSources.id, sourceId),
+      ),
+    )
+    .limit(1);
+  if (!existing) return { ok: false, error: "Source not found." };
+
+  await db
+    .update(acquisitionSources)
+    .set({ isActive: !archived, updatedAt: new Date() })
+    .where(eq(acquisitionSources.id, sourceId));
+
+  await recordAudit({
+    organizationId: org.id,
+    actorUserId: user.authId,
+    action: archived ? "archive" : "unarchive",
+    entityType: "acquisition_source",
+    entityId: sourceId,
+    before: { isActive: existing.isActive },
+  });
+
+  revalidatePath("/settings");
+  return { ok: true };
+}
+
+/** Delete a source no patient points at; otherwise archive it. */
+export async function deleteAcquisitionSourceAction(
+  sourceId: string,
+): Promise<ActionResult> {
+  const user = await authorize("configuration", "delete");
+  const org = await getPrimaryOrganization();
+  if (!org) return { ok: false, error: "Organization not found." };
+
+  const db = getDb();
+  const [source] = await db
+    .select()
+    .from(acquisitionSources)
+    .where(
+      and(
+        eq(acquisitionSources.organizationId, org.id),
+        eq(acquisitionSources.id, sourceId),
+      ),
+    )
+    .limit(1);
+  if (!source) return { ok: false, error: "Source not found." };
+
+  const { count } = await import("drizzle-orm");
+  const used = await countUsage([
+    db
+      .select({ n: count() })
+      .from(patients)
+      .where(
+        and(
+          eq(patients.organizationId, org.id),
+          eq(patients.acquisitionSource, source.name),
+        ),
+      ),
+  ]);
+  if (used > 0) return { ok: false, error: IN_USE_MSG };
+
+  await db.delete(acquisitionSources).where(eq(acquisitionSources.id, sourceId));
+
+  await recordAudit({
+    organizationId: org.id,
+    actorUserId: user.authId,
+    action: "delete",
+    entityType: "acquisition_source",
+    entityId: sourceId,
+    before: { name: source.name },
+    reason: "Deleted unused acquisition source via Settings",
+  });
+
+  revalidatePath("/settings");
+  return { ok: true };
 }

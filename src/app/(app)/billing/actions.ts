@@ -10,6 +10,7 @@ import {
   creditNotes,
   invoiceItems,
   invoices,
+  patients,
   paymentAllocations,
   payments,
   receipts,
@@ -38,6 +39,7 @@ import {
   deriveInvoiceStatus,
   derivePaymentStatus,
   formatInvoiceNumber,
+  formatReceiptNumber,
   receiptableCents,
 } from "@/lib/domain/invoice";
 import { mapSquarePaymentStatus } from "@/lib/domain/square";
@@ -115,6 +117,28 @@ async function recomputeInvoice(
       updatedAt: new Date(),
     })
     .where(eq(invoices.id, invoiceId));
+}
+
+/**
+ * Next receipt number, taken under a row lock on company_settings so two
+ * concurrent payments cannot be handed the same one. Must run inside the same
+ * transaction as the receipt insert, or the number is reserved and lost.
+ */
+async function nextReceiptNumber(tx: Tx, organizationId: string): Promise<string> {
+  const [settings] = await tx
+    .select()
+    .from(companySettings)
+    .where(eq(companySettings.organizationId, organizationId))
+    .for("update")
+    .limit(1);
+  if (!settings) throw new Error("Company settings not found.");
+
+  const seq = settings.receiptNextSequence;
+  await tx
+    .update(companySettings)
+    .set({ receiptNextSequence: seq + 1, updatedAt: new Date() })
+    .where(eq(companySettings.organizationId, organizationId));
+  return formatReceiptNumber(settings.receiptNumberPrefix ?? "REC-", seq);
 }
 
 /** FR-INV-001: create a draft invoice with frozen line totals. */
@@ -300,6 +324,15 @@ export async function issueInvoiceAction(invoiceId: string): Promise<BillingResu
         .from(invoiceItems)
         .where(eq(invoiceItems.invoiceId, invoiceId));
 
+      // Freeze who this was billed to as well as what for: an address or a
+      // company phone that changes next year must not rewrite a document the
+      // patient already holds (§FR-INV-004).
+      const [billTo] = await tx
+        .select()
+        .from(patients)
+        .where(eq(patients.id, inv.patientId))
+        .limit(1);
+
       const now = new Date();
       await tx
         .update(companySettings)
@@ -320,8 +353,26 @@ export async function issueInvoiceAction(invoiceId: string): Promise<BillingResu
             notes: inv.notes,
             company: {
               legalName: org.legalName,
+              operatingName: org.operatingName,
               currency: org.currency,
+              address: settings.address,
+              phone: settings.phone,
+              email: settings.email,
+              website: settings.website,
             },
+            billTo: billTo
+              ? {
+                  patientNumber: billTo.patientNumber,
+                  name: `${billTo.legalFirstName} ${billTo.legalLastName}`,
+                  email: billTo.email,
+                  phone: billTo.phoneE164,
+                  address: billTo.address,
+                }
+              : null,
+            legalFooter:
+              inv.language === "es"
+                ? settings.legalFooterEs
+                : settings.legalFooterEn,
             totals: {
               subtotalCents: inv.subtotalCents,
               discountCents: inv.discountCents,
@@ -514,6 +565,7 @@ export async function payInvoiceAction(
         organizationId: org.id,
         paymentId: payment.id,
         invoiceId,
+        receiptNumber: await nextReceiptNumber(tx, org.id),
         amountCents: amount,
         language: invoice.language,
         snapshot: {
@@ -689,6 +741,7 @@ export async function paySquareCardAction(
           organizationId: org.id,
           paymentId: payment.id,
           invoiceId,
+          receiptNumber: await nextReceiptNumber(tx, org.id),
           amountCents: applied,
           language: inv.language,
           snapshot: {
@@ -1060,6 +1113,7 @@ export async function verifyEtransferAction(paymentId: string): Promise<BillingR
           organizationId: org.id,
           paymentId,
           invoiceId: intendedInvoiceId,
+          receiptNumber: await nextReceiptNumber(tx, org.id),
           amountCents: applied,
           language: invoice.language,
           snapshot: {
@@ -1121,21 +1175,25 @@ export async function generateReceiptAction(invoiceId: string): Promise<BillingR
     return { ok: false, error: "No confirmed payments to receipt." };
   }
 
-  const [created] = await db
-    .insert(receipts)
-    .values({
-      organizationId: org.id,
-      paymentId: null, // invoice-level aggregate receipt
-      invoiceId,
-      amountCents: amount,
-      language: invoice.language,
-      snapshot: {
-        invoiceNumber: invoice.invoiceNumber,
+  const created = await db.transaction(async (tx) => {
+    const [row] = await tx
+      .insert(receipts)
+      .values({
+        organizationId: org.id,
+        paymentId: null, // invoice-level aggregate receipt
+        invoiceId,
+        receiptNumber: await nextReceiptNumber(tx, org.id),
         amountCents: amount,
-        currency: invoice.currency,
-      },
-    })
-    .returning();
+        language: invoice.language,
+        snapshot: {
+          invoiceNumber: invoice.invoiceNumber,
+          amountCents: amount,
+          currency: invoice.currency,
+        },
+      })
+      .returning();
+    return row;
+  });
 
   await recordAudit({
     organizationId: org.id,

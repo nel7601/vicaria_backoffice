@@ -76,3 +76,39 @@ describe("template validation (§FR-ENC-002)", () => {
     expect(r.ok).toBe(true);
   });
 });
+
+describe("required checkboxes (consent acknowledgements)", () => {
+  const consent = {
+    fields: [
+      { key: "ack_risks", label: "I assume the risks", type: "checkbox" as const, required: true },
+      { key: "notes", label: "Notes", type: "text" as const },
+    ],
+  };
+
+  it("refuses a consent whose paragraph was left unticked", () => {
+    // `false` is not "empty", so without the checkbox rule a release of
+    // liability would save with every paragraph refused.
+    const res = validateAnswers(consent, { ack_risks: false });
+    expect(res.ok).toBe(false);
+    expect(res.errors.ack_risks).toContain("must be checked");
+  });
+
+  it("refuses a consent whose paragraph was never answered", () => {
+    expect(validateAnswers(consent, {}).ok).toBe(false);
+  });
+
+  it("accepts it once ticked", () => {
+    expect(validateAnswers(consent, { ack_risks: true }).ok).toBe(true);
+  });
+
+  it("leaves optional checkboxes alone in either state", () => {
+    const optional = {
+      fields: [
+        { key: "diabetes", label: "Diabetes", type: "checkbox" as const },
+      ],
+    };
+    expect(validateAnswers(optional, {}).ok).toBe(true);
+    expect(validateAnswers(optional, { diabetes: false }).ok).toBe(true);
+    expect(validateAnswers(optional, { diabetes: true }).ok).toBe(true);
+  });
+});

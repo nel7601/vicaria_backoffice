@@ -100,6 +100,9 @@ export async function listTemplates(organizationId: string) {
       and(
         eq(encounterTemplates.organizationId, organizationId),
         isNull(encounterTemplates.archivedAt),
+        // Only clinical templates document a visit; administrative ones
+        // (consents, authorizations) live on the patient's file.
+        eq(encounterTemplates.scope, "clinical"),
       ),
     );
 }
@@ -119,6 +122,7 @@ export async function listTemplatesDetailed(organizationId: string) {
       name: encounterTemplates.name,
       serviceId: encounterTemplates.serviceId,
       serviceName: services.nameEn,
+      scope: encounterTemplates.scope,
       archivedAt: encounterTemplates.archivedAt,
       versionId: encounterTemplateVersions.id,
       version: encounterTemplateVersions.version,
@@ -156,7 +160,11 @@ export async function resolveTemplateVersionForService(
   serviceId: string | null,
 ): Promise<string | null> {
   const detailed = await listTemplatesDetailed(organizationId);
-  const withVersion = detailed.filter((t) => t.versionId && !t.archivedAt);
+  // Administrative templates (consents, authorizations) are never attached to
+  // an encounter note — they belong to the patient's file.
+  const withVersion = detailed.filter(
+    (t) => t.versionId && !t.archivedAt && t.scope === "clinical",
+  );
   if (serviceId) {
     const match = withVersion.find((t) => t.serviceId === serviceId);
     if (match) return match.versionId;

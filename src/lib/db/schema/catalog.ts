@@ -39,6 +39,26 @@ export const serviceCategories = pgTable(
 );
 
 /**
+ * acquisition_sources — controlled list of how a patient found Vicaria
+ * (spec §14 "Client Source"). Free text made MKT-01 unusable: "Google",
+ * "google" and "GOOGLE " counted as three sources.
+ */
+export const acquisitionSources = pgTable(
+  "acquisition_sources",
+  {
+    id: primaryId(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id),
+    name: varchar("name", { length: 120 }).notNull(),
+    nameEs: varchar("name_es", { length: 120 }),
+    isActive: boolean("is_active").notNull().default(true),
+    ...timestamps,
+  },
+  (t) => [unique("uq_acquisition_source").on(t.organizationId, t.name)],
+);
+
+/**
  * services — bilingual service catalog (§FR-SVC-001).
  * Prices are versioned separately so editing a price never rewrites history.
  */

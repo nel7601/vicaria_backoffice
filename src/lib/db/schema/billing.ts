@@ -194,24 +194,33 @@ export const creditNotes = pgTable("credit_notes", {
 /**
  * receipts — snapshots of receipts issued for confirmed payments (§FR-REC-001).
  */
-export const receipts = pgTable("receipts", {
-  id: primaryId(),
-  organizationId: uuid("organization_id")
-    .notNull()
-    .references(() => organizations.id),
-  // Nullable: an invoice-level receipt aggregates its confirmed payments; a
-  // per-payment receipt sets this. (§FR-REC-001)
-  paymentId: uuid("payment_id").references(() => payments.id),
-  invoiceId: uuid("invoice_id").references(() => invoices.id),
-  receiptNumber: varchar("receipt_number", { length: 40 }),
-  amountCents: integer("amount_cents").notNull(),
-  language: preferredLanguageEnum("language").notNull().default("en"),
-  snapshot: jsonb("snapshot").notNull().default({}),
-  issuedAt: timestamp("issued_at", { withTimezone: true, mode: "date" })
-    .notNull()
-    .defaultNow(),
-  ...timestamps,
-});
+export const receipts = pgTable(
+  "receipts",
+  {
+    id: primaryId(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id),
+    // Nullable: an invoice-level receipt aggregates its confirmed payments; a
+    // per-payment receipt sets this. (§FR-REC-001)
+    paymentId: uuid("payment_id").references(() => payments.id),
+    invoiceId: uuid("invoice_id").references(() => invoices.id),
+    receiptNumber: varchar("receipt_number", { length: 40 }),
+    amountCents: integer("amount_cents").notNull(),
+    language: preferredLanguageEnum("language").notNull().default("en"),
+    snapshot: jsonb("snapshot").notNull().default({}),
+    issuedAt: timestamp("issued_at", { withTimezone: true, mode: "date" })
+      .notNull()
+      .defaultNow(),
+    ...timestamps,
+  },
+  (t) => [
+    // Partial UNIQUE, like the invoice number: only numbered receipts collide.
+    uniqueIndex("uq_receipt_number")
+      .on(t.organizationId, t.receiptNumber)
+      .where(sql`${t.receiptNumber} IS NOT NULL`),
+  ],
+);
 
 /**
  * cash_sessions + cash_movements — cash drawer control (§FR-PAY-004).

@@ -223,3 +223,14 @@ export const calendarFeedDetailEnum = pgEnum("calendar_feed_detail", [
   "initials",
   "full",
 ]);
+
+/**
+ * Where a form template belongs (task: Thermocoagulation forms).
+ *   clinical        part of the clinical record — tabs and Evolution
+ *   administrative  attached to the patient's file, never to the chart
+ *                   (e.g. a release of liability, an authorization)
+ */
+export const templateScopeEnum = pgEnum("template_scope", [
+  "clinical",
+  "administrative",
+]);

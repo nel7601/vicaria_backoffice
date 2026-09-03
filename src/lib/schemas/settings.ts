@@ -62,6 +62,21 @@ export const updateCategorySchema = z.object({
 
 export type UpdateCategoryInput = z.infer<typeof updateCategorySchema>;
 
+/**
+ * Acquisition source (spec §14 "Client Source"). Renaming one rewrites every
+ * patient that pointed at the old name, so the report keeps counting the same
+ * channel rather than splitting it in two.
+ */
+export const updateAcquisitionSourceSchema = z.object({
+  name: z.string().trim().min(1, "Required").max(120),
+  nameEs: z.string().trim().max(120).optional().or(z.literal("")),
+  isActive: z.boolean(),
+});
+
+export type UpdateAcquisitionSourceInput = z.infer<
+  typeof updateAcquisitionSourceSchema
+>;
+
 export const roleEnum = z.enum([
   "owner",
   "administrator",

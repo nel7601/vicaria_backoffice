@@ -51,3 +51,17 @@ export const duplicateCheckSchema = z.object({
 });
 
 export type DuplicateCheckInput = z.infer<typeof duplicateCheckSchema>;
+
+/**
+ * Patient update (FR-PAT-001). Same fields as creation: contact details go
+ * stale — someone moves, changes number, switches email — and correcting them
+ * in place is the everyday case, not an exception.
+ *
+ * patient_number is deliberately absent: it is the record's identity and is
+ * never edited.
+ */
+export const updatePatientSchema = createPatientSchema.extend({
+  marketingOptIn: z.boolean(),
+});
+
+export type UpdatePatientInput = z.infer<typeof updatePatientSchema>;

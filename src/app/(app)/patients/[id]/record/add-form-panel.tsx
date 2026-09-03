@@ -24,10 +24,13 @@ export function AddFormPanel({
   patientId,
   forms,
   today,
+  from,
 }: {
   patientId: string;
   forms: FormOption[];
   today: string;
+  /** Where the record was opened from, kept so the back link survives a save. */
+  from?: string;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -67,7 +70,11 @@ export function AddFormPanel({
         setOpen(false);
         setVersionId("");
         setAnswers({});
-        router.push(`/patients/${patientId}/record?tab=${selected.templateId}`);
+        router.push(
+          `/patients/${patientId}/record?tab=${selected.templateId}${
+            from ? `&from=${encodeURIComponent(from)}` : ""
+          }`,
+        );
         router.refresh();
       } else {
         setError(res.error ?? "Could not save the form.");

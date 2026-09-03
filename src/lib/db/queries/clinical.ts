@@ -83,6 +83,7 @@ export async function getPatientChart(organizationId: string, patientId: string)
         filledByEmail: users.email,
         templateId: encounterTemplates.id,
         templateName: encounterTemplates.name,
+        templateScope: encounterTemplates.scope,
         templateVersion: encounterTemplateVersions.version,
         templateSchema: encounterTemplateVersions.schema,
       })
@@ -105,7 +106,15 @@ export async function getPatientChart(organizationId: string, patientId: string)
       .orderBy(desc(patientForms.filledAt)),
   ]);
 
-  return { encounters: rows, notes, forms };
+  // Administrative forms (a signed release, an authorization) are attached to
+  // the patient, not to their clinical history, and must never surface in the
+  // chart. Splitting here keeps that rule in one place.
+  return {
+    encounters: rows,
+    notes,
+    forms: forms.filter((f) => f.templateScope !== "administrative"),
+    fileForms: forms.filter((f) => f.templateScope === "administrative"),
+  };
 }
 
 export async function listPlans(organizationId: string, patientId: string) {
@@ -163,4 +172,44 @@ export async function dashboardCounters(organizationId: string, now: Date) {
     unsignedNotes: unsigned?.n ?? 0,
     overdueTasks: overdue?.n ?? 0,
   };
+}
+
+/**
+ * Forms attached to the patient's administrative file: signed releases,
+ * authorizations and anything else that is kept on file but is not clinical
+ * history. The clinical record deliberately does not show these.
+ */
+export async function listPatientFileForms(
+  organizationId: string,
+  patientId: string,
+) {
+  const db = getDb();
+  return db
+    .select({
+      id: patientForms.id,
+      filledAt: patientForms.filledAt,
+      answers: patientForms.answers,
+      filledByEmail: users.email,
+      templateId: encounterTemplates.id,
+      templateName: encounterTemplates.name,
+      templateSchema: encounterTemplateVersions.schema,
+    })
+    .from(patientForms)
+    .innerJoin(
+      encounterTemplateVersions,
+      eq(encounterTemplateVersions.id, patientForms.templateVersionId),
+    )
+    .innerJoin(
+      encounterTemplates,
+      eq(encounterTemplates.id, encounterTemplateVersions.templateId),
+    )
+    .leftJoin(users, eq(users.id, patientForms.filledBy))
+    .where(
+      and(
+        eq(patientForms.organizationId, organizationId),
+        eq(patientForms.patientId, patientId),
+        eq(encounterTemplates.scope, "administrative"),
+      ),
+    )
+    .orderBy(desc(patientForms.filledAt));
 }

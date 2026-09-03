@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
+import { BackLink } from "@/components/ui/back-link";
 import { Card, CardTitle } from "@/components/ui/card";
 import { getSessionUser } from "@/lib/auth/session";
 import { can } from "@/lib/auth/rbac";
@@ -81,9 +82,9 @@ export default async function ClinicalRecordPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ tab?: string }>;
+  searchParams: Promise<{ tab?: string; from?: string }>;
 }) {
-  const [{ id }, { tab }] = await Promise.all([params, searchParams]);
+  const [{ id }, { tab, from }] = await Promise.all([params, searchParams]);
   const user = await getSessionUser();
   if (!user) redirect("/login");
   const roles = user.roles;
@@ -121,8 +122,11 @@ export default async function ClinicalRecordPage({
     purpose: "clinical_record",
   });
 
+  // Administrative forms (a signed release) are filled from the patient's
+  // file, not from the chart — offering them here would file a consent as
+  // clinical history.
   const formOptions: FormOption[] = templates
-    .filter((t) => t.versionId && !t.archivedAt)
+    .filter((t) => t.versionId && !t.archivedAt && t.scope === "clinical")
     .map((t) => ({
       templateId: t.templateId,
       versionId: t.versionId!,
@@ -168,6 +172,14 @@ export default async function ClinicalRecordPage({
 
   const activeTab = tab && formTabs.has(tab) ? tab : "evolution";
 
+  // Keep `from` across tab switches, or the back link vanishes on the second
+  // click. Same for the links out to an encounter, which come back here.
+  const fromQuery = from ? `&from=${encodeURIComponent(from)}` : "";
+  const recordHref = (t?: string) =>
+    `/patients/${patient.id}/record${t ? `?tab=${t}${fromQuery}` : from ? `?from=${encodeURIComponent(from)}` : ""}`;
+  const encounterHref = (encounterId: string) =>
+    `/encounters/${encounterId}?from=${encodeURIComponent(recordHref(activeTab === "evolution" ? undefined : activeTab))}`;
+
   // Evolution: encounters + filled forms + chart notes merged, newest first.
   type EvolutionEntry =
     | { kind: "encounter"; at: Date; encounter: (typeof chart.encounters)[number] }
@@ -193,12 +205,11 @@ export default async function ClinicalRecordPage({
   return (
     <div className="space-y-6">
       <div>
-        <Link
-          href={`/patients/${patient.id}`}
-          className="text-sm text-primary hover:underline"
-        >
-          ← Patient profile
-        </Link>
+        <BackLink
+          from={from}
+          fallbackHref={`/patients/${patient.id}`}
+          fallbackLabel="Patient profile"
+        />
         <h1 className="mt-1 text-xl font-semibold">
           Clinical record — {patient.preferredName || patient.legalFirstName}{" "}
           {patient.legalLastName}
@@ -214,16 +225,13 @@ export default async function ClinicalRecordPage({
       {/* Tabs: Evolution + one per form, and the Add form control */}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
-          <Link
-            href={`/patients/${patient.id}/record`}
-            className={tabClass(activeTab === "evolution")}
-          >
+          <Link href={recordHref()} className={tabClass(activeTab === "evolution")}>
             Evolution
           </Link>
           {[...formTabs.entries()].map(([templateId, t]) => (
             <Link
               key={templateId}
-              href={`/patients/${patient.id}/record?tab=${templateId}`}
+              href={recordHref(templateId)}
               className={tabClass(activeTab === templateId)}
             >
               {t.name}
@@ -238,6 +246,7 @@ export default async function ClinicalRecordPage({
           patientId={patient.id}
           forms={formOptions}
           today={clinicDateString(new Date())}
+          from={from}
         />
       )}
 
@@ -275,7 +284,7 @@ export default async function ClinicalRecordPage({
                       <div className="text-sm font-medium">
                         {fmtDate(entry.at)} ·{" "}
                         <Link
-                          href={`/encounters/${e.id}`}
+                          href={encounterHref(e.id)}
                           className="text-primary hover:underline"
                         >
                           {e.serviceName ?? "Encounter"}
@@ -307,7 +316,7 @@ export default async function ClinicalRecordPage({
                     <div className="text-sm font-medium">
                       {fmtDate(entry.at)} ·{" "}
                       <Link
-                        href={`/patients/${patient.id}/record?tab=${f.templateId}`}
+                        href={recordHref(f.templateId)}
                         className="text-primary hover:underline"
                       >
                         {f.templateName}
@@ -380,7 +389,7 @@ export default async function ClinicalRecordPage({
                         {item.status}
                       </span>
                       <Link
-                        href={`/encounters/${item.encounterId}`}
+                        href={encounterHref(item.encounterId!)}
                         className="text-xs text-primary hover:underline"
                       >
                         Open encounter
