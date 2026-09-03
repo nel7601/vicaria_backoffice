@@ -5,7 +5,7 @@ import { getSessionUser } from "@/lib/auth/session";
 import { can } from "@/lib/auth/rbac";
 import { getPrimaryOrganization } from "@/lib/db/queries/organization";
 import { listCaregivers, listShiftsInWindow } from "@/lib/db/queries/care";
-import { dbErrorHint, withDbRetry } from "@/lib/db/retry";
+import { dbFailureMessage, withDbRetry } from "@/lib/db/retry";
 import { formatMinutes, shiftMinutes } from "@/lib/domain/care";
 import {
   clinicDateString,
@@ -114,7 +114,7 @@ export default async function CareSchedulePage({
       );
     }
   } catch (e) {
-    dbError = `Could not load the schedule — ${dbErrorHint(e)}. Try again; if it repeats, send this line to support.`;
+    dbError = dbFailureMessage("the care schedule", e);
     console.error("Care schedule load failed:", e);
   }
 

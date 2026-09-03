@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { RecordLink } from "@/components/ui/record-link";
 import { getSessionUser } from "@/lib/auth/session";
+import { dbFailureMessage } from "@/lib/db/retry";
 import { can } from "@/lib/auth/rbac";
 import { getEncounter, listEncounterLines } from "@/lib/db/queries/encounters";
 import { listServicesWithPrice } from "@/lib/db/queries/organization";
@@ -76,7 +77,7 @@ export default async function EncounterPage({
       }
     }
   } catch (e) {
-    dbError = "Database not reachable.";
+    dbError = dbFailureMessage("this encounter", e);
     console.error("Encounter load failed:", e);
   }
 

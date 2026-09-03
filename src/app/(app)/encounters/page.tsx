@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Card, CardTitle } from "@/components/ui/card";
 import { RecordLink } from "@/components/ui/record-link";
 import { getSessionUser } from "@/lib/auth/session";
+import { dbFailureMessage } from "@/lib/db/retry";
 import { can } from "@/lib/auth/rbac";
 import { getPrimaryOrganization } from "@/lib/db/queries/organization";
 import { getEmployeeIdForAuthUser } from "@/lib/db/queries/employee";
@@ -71,7 +72,7 @@ export default async function EncountersPage({
       }
     }
   } catch (e) {
-    dbError = "Database not reachable. Configure DATABASE_URL and run migrations.";
+    dbError = dbFailureMessage("encounters", e);
     console.error("Encounters load failed:", e);
   }
 

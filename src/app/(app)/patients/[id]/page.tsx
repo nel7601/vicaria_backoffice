@@ -3,6 +3,7 @@ import { BackLink } from "@/components/ui/back-link";
 import { Card, CardTitle } from "@/components/ui/card";
 import { RecordLink } from "@/components/ui/record-link";
 import { getSessionUser } from "@/lib/auth/session";
+import { dbFailureMessage } from "@/lib/db/retry";
 import { can } from "@/lib/auth/rbac";
 import { formatCents } from "@/lib/domain/money";
 import type { TemplateField } from "@/lib/domain/encounter";
@@ -123,7 +124,7 @@ export default async function Patient360Page({
       }
     }
   } catch (e) {
-    dbError = "Database not reachable.";
+    dbError = dbFailureMessage("this patient", e);
     console.error("Patient 360 load failed:", e);
   }
 

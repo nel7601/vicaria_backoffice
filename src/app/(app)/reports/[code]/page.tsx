@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Card, CardTitle } from "@/components/ui/card";
 import { getSessionUser } from "@/lib/auth/session";
+import { dbFailureMessage } from "@/lib/db/retry";
 import { can } from "@/lib/auth/rbac";
 import { getReport } from "@/lib/reports/registry";
 import { getPrimaryOrganization } from "@/lib/db/queries/organization";
@@ -43,7 +44,7 @@ export default async function ReportViewPage({
       });
     }
   } catch (e) {
-    dbError = "Database not reachable. Configure DATABASE_URL and run migrations.";
+    dbError = dbFailureMessage("this report", e);
     console.error("Report run failed:", e);
   }
 

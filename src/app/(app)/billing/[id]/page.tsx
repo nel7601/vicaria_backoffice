@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { RecordLink } from "@/components/ui/record-link";
 import { getSessionUser } from "@/lib/auth/session";
+import { dbFailureMessage } from "@/lib/db/retry";
 import { can } from "@/lib/auth/rbac";
 import { formatCents } from "@/lib/domain/money";
 import {
@@ -75,7 +76,7 @@ export default async function InvoiceDetailPage({
       }
     }
   } catch (e) {
-    dbError = "Database not reachable.";
+    dbError = dbFailureMessage("this invoice", e);
     console.error("Invoice load failed:", e);
   }
 

@@ -17,7 +17,7 @@ import { firstFreeSlot } from "@/lib/domain/availability";
 import { STATUS_FILTERS, statusesForFilter } from "./status-display";
 import { NewAppointmentForm } from "./new-appointment-form";
 import { AppointmentRow } from "./appointment-row";
-import { dbErrorHint, withDbRetry } from "@/lib/db/retry";
+import { dbFailureMessage, withDbRetry } from "@/lib/db/retry";
 import {
   clinicDateString,
   clinicDayWindow,
@@ -102,7 +102,7 @@ export default async function CalendarPage({
   } catch (e) {
     // Name the failure on screen: "not reachable" sends everyone hunting in
     // the wrong place, and the code says which place is the right one.
-    dbError = `Could not load the calendar — ${dbErrorHint(e)}. Try again; if it repeats, send this line to support.`;
+    dbError = dbFailureMessage("the calendar", e);
     console.error("Calendar load failed:", e);
   }
 

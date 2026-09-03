@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Card, CardTitle } from "@/components/ui/card";
 import { RecordLink } from "@/components/ui/record-link";
 import { getSessionUser } from "@/lib/auth/session";
+import { dbFailureMessage } from "@/lib/db/retry";
 import { can } from "@/lib/auth/rbac";
 import { getPrimaryOrganization } from "@/lib/db/queries/organization";
 import { listCareAgreements } from "@/lib/db/queries/care";
@@ -52,7 +53,7 @@ export default async function CarePage() {
       }
     }
   } catch (e) {
-    dbError = "Database not reachable. Run migration 0005 and retry.";
+    dbError = dbFailureMessage("home care", e);
     console.error("Care page load failed:", e);
   }
 

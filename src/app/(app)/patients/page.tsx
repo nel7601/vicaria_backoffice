@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { getSessionUser } from "@/lib/auth/session";
+import { dbFailureMessage } from "@/lib/db/retry";
 import { can, readScopeFor } from "@/lib/auth/rbac";
 import { getPrimaryOrganization } from "@/lib/db/queries/organization";
 import { getEmployeeIdForAuthUser } from "@/lib/db/queries/employee";
@@ -93,7 +94,7 @@ export default async function PatientsPage({
       total = res.total;
     }
   } catch (e) {
-    dbError = "Database not reachable. Configure DATABASE_URL and run migrations.";
+    dbError = dbFailureMessage("patients", e);
     console.error("Patients load failed:", e);
   }
 

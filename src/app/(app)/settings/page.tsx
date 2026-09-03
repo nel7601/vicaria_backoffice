@@ -10,6 +10,7 @@ import {
   listServicesWithPrice,
 } from "@/lib/db/queries/organization";
 import { listTemplatesDetailed } from "@/lib/db/queries/encounters";
+import { dbFailureMessage } from "@/lib/db/retry";
 import type { TemplateFieldInput } from "@/lib/schemas/template";
 import { CompanyForm } from "./company-form";
 import { EmployeesSection, type EmployeeRow } from "./employees-section";
@@ -119,8 +120,7 @@ export default async function SettingsPage() {
       }));
     }
   } catch (e) {
-    dbError =
-      "Database not reachable. Configure DATABASE_URL and run migrations to manage settings.";
+    dbError = dbFailureMessage("settings", e);
     console.error("Settings load failed:", e);
   }
 

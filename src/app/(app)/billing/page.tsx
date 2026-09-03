@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Card, CardTitle } from "@/components/ui/card";
 import { RecordLink } from "@/components/ui/record-link";
 import { getSessionUser } from "@/lib/auth/session";
+import { dbFailureMessage } from "@/lib/db/retry";
 import { can } from "@/lib/auth/rbac";
 import { formatCents } from "@/lib/domain/money";
 import {
@@ -163,7 +164,7 @@ export default async function BillingPage({
       }
     }
   } catch (e) {
-    dbError = "Database not reachable. Configure DATABASE_URL and run migrations.";
+    dbError = dbFailureMessage("billing", e);
     console.error("Billing load failed:", e);
   }
 
