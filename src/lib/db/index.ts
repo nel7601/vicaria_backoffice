@@ -34,15 +34,27 @@ function createDb() {
      * pooler closes connections that sit idle without telling us; inheriting
      * one of those is the "database not reachable" that a refresh clears. So
      * we retire idle and long-lived connections ourselves.
-     *
-     * The pool size stays at the library default. Pages load several queries
-     * at once, and a pool smaller than that turns every page into a queue —
-     * which is a worse problem than the one being solved. Dead sockets are
-     * handled by retiring them here and by the retry in `./retry`, not by
-     * starving the pool.
      */
     idle_timeout: 60,
     max_lifetime: 60 * 30,
+
+    /*
+     * Cap the pool per instance.
+     *
+     * The library default is 10, and the previous note here argued for leaving
+     * it there so a page's parallel queries would not queue. That reasoning
+     * only holds if the connections are cheap, and against Supavisor they are
+     * not: the pooler has a fixed ceiling shared by every warm function, so
+     * two instances at 10 exhaust it and the third gets EMAXCONNSESSION —
+     * which the pages report as "Database not reachable", blaming the network
+     * for what is really a budget we overspent. It happened in production on
+     * 2026-09-02.
+     *
+     * Three is enough for the widest page (the patient profile runs five
+     * queries in one Promise.all, so two of them wait a few milliseconds), and
+     * it leaves room for several instances inside the same ceiling.
+     */
+    max: 3,
   });
   return drizzle(client, { schema });
 }
