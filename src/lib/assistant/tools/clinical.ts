@@ -14,6 +14,7 @@ import {
 import { planRead } from "../policy/scope";
 import { dateSpecSchema, resolveDate } from "./resolve-date";
 import type { AssistantTool, ToolContext } from "./types";
+import { localeOf, spokenDayOrNull, spokenInstantOrNull } from "./when";
 
 /**
  * The clinical record.
@@ -102,8 +103,8 @@ export const listEncountersTool: AssistantTool<z.infer<typeof encountersInput>, 
       count: rows.length,
       encounters: rows.map((r) => ({
         encounterId: r.id,
-        startedAt: r.startedAt?.toISOString() ?? null,
-        signedAt: r.signedAt?.toISOString() ?? null,
+        startedAt: spokenInstantOrNull(r.startedAt, ctx.timeZone, localeOf(ctx)),
+        signedAt: spokenInstantOrNull(r.signedAt, ctx.timeZone, localeOf(ctx)),
         status: r.status,
         patient: `${r.patientFirst} ${r.patientLast}`.trim(),
         patientId: r.patientId,
@@ -183,9 +184,9 @@ export const getEncounterTool: AssistantTool<z.infer<typeof encounterInput>, unk
       patient: `${row.patientFirst} ${row.patientLast}`.trim(),
       patientId: row.patientId,
       practitioner: `${row.practFirst} ${row.practLast}`.trim(),
-      startedAt: row.startedAt?.toISOString() ?? null,
-      endedAt: row.endedAt?.toISOString() ?? null,
-      signedAt: row.signedAt?.toISOString() ?? null,
+      startedAt: spokenInstantOrNull(row.startedAt, ctx.timeZone, localeOf(ctx)),
+      endedAt: spokenInstantOrNull(row.endedAt, ctx.timeZone, localeOf(ctx)),
+      signedAt: spokenInstantOrNull(row.signedAt, ctx.timeZone, localeOf(ctx)),
       status: row.status,
       modality: row.modality,
       summary: row.summary ?? undefined,
@@ -195,7 +196,7 @@ export const getEncounterTool: AssistantTool<z.infer<typeof encounterInput>, unk
         type: m.type,
         value: m.numeric ?? m.text,
         unit: m.unit ?? undefined,
-        observedAt: m.observedAt?.toISOString() ?? null,
+        observedAt: spokenInstantOrNull(m.observedAt, ctx.timeZone, localeOf(ctx)),
       })),
     };
   },
@@ -283,7 +284,7 @@ export const getPatientChartTool: AssistantTool<z.infer<typeof chartInput>, unkn
     return {
       patientId: args.patientId,
       notes: notes.map((n) => ({
-        notedAt: n.notedAt?.toISOString() ?? null,
+        notedAt: spokenInstantOrNull(n.notedAt, ctx.timeZone, localeOf(ctx)),
         body: n.body,
       })),
       treatmentPlans: plans.map((p) => ({
@@ -291,14 +292,14 @@ export const getPatientChartTool: AssistantTool<z.infer<typeof chartInput>, unkn
         title: p.title,
         objective: p.objective ?? undefined,
         status: p.status,
-        startDate: p.startDate?.toISOString() ?? null,
-        endDate: p.endDate?.toISOString() ?? null,
+        startDate: spokenDayOrNull(p.startDate, ctx.timeZone, localeOf(ctx)),
+        endDate: spokenDayOrNull(p.endDate, ctx.timeZone, localeOf(ctx)),
       })),
       measurements: measurements.map((m) => ({
         type: m.type,
         value: m.numeric ?? m.text,
         unit: m.unit ?? undefined,
-        observedAt: m.observedAt?.toISOString() ?? null,
+        observedAt: spokenInstantOrNull(m.observedAt, ctx.timeZone, localeOf(ctx)),
       })),
     };
   },

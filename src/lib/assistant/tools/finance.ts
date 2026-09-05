@@ -12,6 +12,7 @@ import {
 import { planRead } from "../policy/scope";
 import { dateSpecSchema, resolveDate } from "./resolve-date";
 import type { AssistantTool, ToolContext } from "./types";
+import { localeOf, spokenDayOrNull, spokenInstantOrNull } from "./when";
 
 /**
  * Money in detail.
@@ -112,8 +113,8 @@ export const getInvoiceTool: AssistantTool<z.infer<typeof invoiceInput>, unknown
         ? `${invoice.patientFirst} ${invoice.patientLast}`.trim()
         : undefined,
       patientId: plan.identifiable ? invoice.patientId : undefined,
-      issueDate: invoice.issueDate?.toISOString() ?? null,
-      dueDate: invoice.dueDate?.toISOString() ?? null,
+      issueDate: spokenDayOrNull(invoice.issueDate, ctx.timeZone, localeOf(ctx)),
+      dueDate: spokenDayOrNull(invoice.dueDate, ctx.timeZone, localeOf(ctx)),
       currency: invoice.currency,
       amountsInCents: {
         subtotal: invoice.subtotal,
@@ -135,7 +136,7 @@ export const getInvoiceTool: AssistantTool<z.infer<typeof invoiceInput>, unknown
         amountCents: p.amount,
         method: p.method,
         status: p.status,
-        receivedAt: p.receivedAt?.toISOString() ?? null,
+        receivedAt: spokenInstantOrNull(p.receivedAt, ctx.timeZone, localeOf(ctx)),
       })),
     };
   },
@@ -231,7 +232,7 @@ export const listPaymentsTool: AssistantTool<z.infer<typeof paymentsInput>, unkn
         amountCents: r.amount,
         method: r.method,
         status: r.status,
-        receivedAt: r.receivedAt?.toISOString() ?? null,
+        receivedAt: spokenInstantOrNull(r.receivedAt, ctx.timeZone, localeOf(ctx)),
         reference: r.reference ?? undefined,
         patient:
           r.patientFirst ? `${r.patientFirst} ${r.patientLast}`.trim() : undefined,
@@ -303,7 +304,7 @@ export const listOverdueInvoicesTool: AssistantTool<z.infer<typeof overdueInput>
         invoiceId: r.id,
         number: r.number,
         owedCents: r.balance,
-        dueDate: r.dueDate?.toISOString() ?? null,
+        dueDate: spokenDayOrNull(r.dueDate, ctx.timeZone, localeOf(ctx)),
         daysOverdue: days(r.dueDate),
         status: r.status,
         patient: `${r.patientFirst} ${r.patientLast}`.trim(),

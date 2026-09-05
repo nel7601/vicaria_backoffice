@@ -6,6 +6,7 @@ import { appointments, invoices, patients } from "@/lib/db/schema";
 import { principalReadScope } from "@/lib/auth/authorize-principal";
 import { planRead } from "../policy/scope";
 import type { AssistantTool, ToolContext } from "./types";
+import { localeOf, spokenInstantOrNull } from "./when";
 
 /**
  * `get_patient_summary` — what a staff member needs to know before a visit.
@@ -117,8 +118,8 @@ export const getPatientSummaryTool: AssistantTool<Input, unknown> = {
       patientNumber: patient.patientNumber,
       status: patient.status,
       preferredLanguage: patient.preferredLanguage,
-      lastCompletedVisit: past[0]?.startAt.toISOString() ?? null,
-      nextAppointment: future[0]?.startAt.toISOString() ?? null,
+      lastCompletedVisit: spokenInstantOrNull(past[0]?.startAt, ctx.timeZone, localeOf(ctx)),
+      nextAppointment: spokenInstantOrNull(future[0]?.startAt, ctx.timeZone, localeOf(ctx)),
       completedVisitsOnRecord: past.length,
     };
 

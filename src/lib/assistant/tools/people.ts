@@ -5,6 +5,7 @@ import { getDb } from "@/lib/db";
 import { appointments, employees, patients, userRoles, users } from "@/lib/db/schema";
 import { planRead } from "../policy/scope";
 import type { AssistantTool, ToolContext } from "./types";
+import { localeOf, spokenInstant } from "./when";
 
 /**
  * Reading people: patients as a list, and the staff who see them.
@@ -244,7 +245,7 @@ export const getPatientHistoryTool: AssistantTool<z.infer<typeof historyInput>, 
       count: rows.length,
       appointments: rows.map((r) => ({
         appointmentId: r.id,
-        startAt: r.startAt.toISOString(),
+        start: spokenInstant(r.startAt, ctx.timeZone, localeOf(ctx)),
         status: r.status,
         modality: r.modality,
         practitioner: `${r.practitionerFirst} ${r.practitionerLast}`.trim(),

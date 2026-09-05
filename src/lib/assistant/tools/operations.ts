@@ -7,6 +7,7 @@ import { listShiftsInWindow } from "@/lib/db/queries/care";
 import { planRead } from "../policy/scope";
 import { dateSpecSchema, resolveDate } from "./resolve-date";
 import type { AssistantTool, ToolContext } from "./types";
+import { localeOf, spokenDayOrNull, spokenInstant } from "./when";
 
 /**
  * Home care, follow-up tasks and invoices (§4.3 of the assistant plan).
@@ -83,8 +84,8 @@ export const getCareShiftsForRangeTool: AssistantTool<
       scope: caregiverId ? "your own shifts" : "the whole clinic",
       shifts: shifts.map((s) => ({
         shiftId: s.id,
-        startAt: s.startAt.toISOString(),
-        endAt: s.endAt.toISOString(),
+        start: spokenInstant(s.startAt, ctx.timeZone, localeOf(ctx)),
+        end: spokenInstant(s.endAt, ctx.timeZone, localeOf(ctx)),
         status: s.status,
         caregiver: `${s.caregiverFirst} ${s.caregiverLast}`.trim(),
         client: `${s.patientFirst} ${s.patientLast}`.trim(),
@@ -189,7 +190,7 @@ export const getFollowUpTasksTool: AssistantTool<
         taskId: r.id,
         title: r.title,
         type: r.taskType ?? undefined,
-        dueDate: r.dueDate?.toISOString() ?? null,
+        dueDate: spokenDayOrNull(r.dueDate, ctx.timeZone, localeOf(ctx)),
         priority: r.priority,
         status: r.status,
         patientId: r.patientId,
@@ -293,7 +294,7 @@ export const getInvoicesTool: AssistantTool<
         status: r.status,
         totalCents: r.totalCents,
         balanceCents: r.balanceCents,
-        dueDate: r.dueDate?.toISOString() ?? null,
+        dueDate: spokenDayOrNull(r.dueDate, ctx.timeZone, localeOf(ctx)),
         patientId: r.patientId,
         patient: `${r.patientFirst} ${r.patientLast}`.trim(),
       })),

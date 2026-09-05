@@ -6,6 +6,7 @@ import { appointments, employees, patients, services } from "@/lib/db/schema";
 import { planRead } from "../policy/scope";
 import { dateSpecSchema, resolveDate } from "./resolve-date";
 import type { AssistantTool, ToolContext } from "./types";
+import { localeOf, spokenInstant } from "./when";
 
 /**
  * `get_appointments_for_range` — the schedule for a day or range (§4.3).
@@ -99,8 +100,8 @@ export const getAppointmentsForRangeTool: AssistantTool<Input, unknown> = {
         range: { start: range.startDay, end: range.endDay, timeZone: range.timeZone },
         count: rows.length,
         appointments: rows.map((r) => ({
-          startAt: r.startAt.toISOString(),
-          endAt: r.endAt.toISOString(),
+          start: spokenInstant(r.startAt, ctx.timeZone, localeOf(ctx)),
+          end: spokenInstant(r.endAt, ctx.timeZone, localeOf(ctx)),
           status: r.status,
         })),
         note: "This role sees appointment times only, without patient identities.",
@@ -117,8 +118,8 @@ export const getAppointmentsForRangeTool: AssistantTool<Input, unknown> = {
       scope: plan.mode === "own" ? "your own appointments" : "the whole clinic",
       appointments: rows.map((r) => ({
         appointmentId: r.id,
-        startAt: r.startAt.toISOString(),
-        endAt: r.endAt.toISOString(),
+        start: spokenInstant(r.startAt, ctx.timeZone, localeOf(ctx)),
+        end: spokenInstant(r.endAt, ctx.timeZone, localeOf(ctx)),
         status: r.status,
         modality: r.modality,
         patientId: r.patientId,

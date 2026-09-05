@@ -69,7 +69,13 @@ export function buildActionTools(): AssistantTool[] {
           // Echoed back on confirmation to prove the user agreed to this and
           // not to whatever that id points at later.
           argumentsHash: hashArguments(prepared.arguments),
-          expiresAt: proposal.expiresAt.toISOString(),
+          // Seconds, not a timestamp: a proposal lives for a couple of minutes,
+          // and "you have 90 seconds" is both what the user needs and the one
+          // form the model cannot misread into the wrong timezone.
+          expiresInSeconds: Math.max(
+            0,
+            Math.round((proposal.expiresAt.getTime() - ctx.now.getTime()) / 1000),
+          ),
           summary: prepared.summary,
           irreversible: definition.irreversible ?? false,
           guidance:
